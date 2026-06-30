@@ -1,0 +1,30 @@
+term,language,category,halal_classification,explanation_en,explanation_de,source_required
+E120,both,coloring,Not halal,Carmine is commonly derived from insects and is treated as not halal for this demo.,Karmin wird haeufig aus Insekten gewonnen und wird in dieser Demo als nicht halal bewertet.,0
+Carmine,en,coloring,Not halal,Carmine is commonly derived from insects and is treated as not halal for this demo.,Karmin wird haeufig aus Insekten gewonnen und wird in dieser Demo als nicht halal bewertet.,0
+Karmin,de,coloring,Not halal,Carmine is commonly derived from insects and is treated as not halal for this demo.,Karmin wird haeufig aus Insekten gewonnen und wird in dieser Demo als nicht halal bewertet.,0
+Pork,en,animal ingredient,Not halal,Pork-derived ingredients are not halal.,Schweinebestandteile sind nicht halal.,0
+Schwein,de,animal ingredient,Not halal,Pork-derived ingredients are not halal.,Schweinebestandteile sind nicht halal.,0
+Lard,en,animal fat,Not halal,Lard is pig fat and is not halal.,Schweineschmalz ist Schweinefett und nicht halal.,0
+Schmalz,de,animal fat,Not halal,Lard is pig fat and is not halal.,Schweineschmalz ist Schweinefett und nicht halal.,0
+Alcohol,en,processing ingredient,Doubtful / source required,Alcohol source and usage must be checked with the manufacturer.,Die Alkoholquelle und Verwendung muessen beim Hersteller geprueft werden.,1
+Alkohol,de,processing ingredient,Doubtful / source required,Alcohol source and usage must be checked with the manufacturer.,Die Alkoholquelle und Verwendung muessen beim Hersteller geprueft werden.,1
+Gelatin,en,gelling agent,Doubtful / source required,Gelatin can come from animal sources and needs source confirmation.,Gelatine kann aus tierischen Quellen stammen und benoetigt eine Quellenbestaetigung.,1
+Gelatine,de,gelling agent,Doubtful / source required,Gelatin can come from animal sources and needs source confirmation.,Gelatine kann aus tierischen Quellen stammen und benoetigt eine Quellenbestaetigung.,1
+E441,both,gelling agent,Doubtful / source required,E441 is gelatin and requires source confirmation.,E441 ist Gelatine und benoetigt eine Quellenbestaetigung.,1
+E471,both,emulsifier,Doubtful / source required,E471 mono- and diglycerides may be plant-based or animal-based.,E471 Mono- und Diglyceride koennen pflanzlich oder tierisch sein.,1
+E472,both,emulsifier,Doubtful / source required,E472 emulsifiers may need source confirmation.,E472 Emulgatoren koennen eine Quellenbestaetigung benoetigen.,1
+Mono- and diglycerides,en,emulsifier,Doubtful / source required,Mono- and diglycerides require plant or animal source confirmation.,Mono- und Diglyceride benoetigen eine Bestaetigung der pflanzlichen oder tierischen Quelle.,1
+Mono- und Diglyceride,de,emulsifier,Doubtful / source required,Mono- and diglycerides require plant or animal source confirmation.,Mono- und Diglyceride benoetigen eine Bestaetigung der pflanzlichen oder tierischen Quelle.,1
+Glycerine,en,humectant,Doubtful / source required,Glycerine can be plant-based synthetic or animal-derived.,Glycerin kann pflanzlich synthetisch oder tierisch sein.,1
+Glycerol,en,humectant,Doubtful / source required,Glycerol can be plant-based synthetic or animal-derived.,Glycerol kann pflanzlich synthetisch oder tierisch sein.,1
+Glycerin,de,humectant,Doubtful / source required,Glycerine can be plant-based synthetic or animal-derived.,Glycerin kann pflanzlich synthetisch oder tierisch sein.,1
+Enzymes,en,processing aid,Doubtful / source required,Enzymes can come from animal microbial or plant sources.,Enzyme koennen tierischen mikrobiellen oder pflanzlichen Ursprungs sein.,1
+Enzyme,de,processing aid,Doubtful / source required,Enzymes can come from animal microbial or plant sources.,Enzyme koennen tierischen mikrobiellen oder pflanzlichen Ursprungs sein.,1
+Rennet,en,enzyme,Doubtful / source required,Rennet may be animal microbial or vegetarian and needs confirmation.,Lab kann tierisch mikrobiell oder vegetarisch sein und muss bestaetigt werden.,1
+Lab,de,enzyme,Doubtful / source required,Rennet may be animal microbial or vegetarian and needs confirmation.,Lab kann tierisch mikrobiell oder vegetarisch sein und muss bestaetigt werden.,1
+Whey,en,dairy,Acceptable,Whey is generally acceptable when no non-halal processing concern is found.,Molke ist grundsaetzlich akzeptabel wenn kein nicht-halaler Verarbeitungshinweis vorliegt.,0
+Molke,de,dairy,Acceptable,Whey is generally acceptable when no non-halal processing concern is found.,Molke ist grundsaetzlich akzeptabel wenn kein nicht-halaler Verarbeitungshinweis vorliegt.,0
+Flavouring,en,flavour,Doubtful / source required,Flavouring can include carrier solvents or animal-derived components.,Aroma kann Traegerloesungen oder tierische Bestandteile enthalten.,1
+Aroma,de,flavour,Doubtful / source required,Flavouring can include carrier solvents or animal-derived components.,Aroma kann Traegerloesungen oder tierische Bestandteile enthalten.,1
+Animal fat,en,animal fat,Doubtful / source required,Animal fat needs species and slaughter confirmation.,Tierisches Fett benoetigt Angaben zu Tierart und Schlachtung.,1
+Tierisches Fett,de,animal fat,Doubtful / source required,Animal fat needs species and slaughter confirmation.,Tierisches Fett benoetigt Angaben zu Tierart und Schlachtung.,1

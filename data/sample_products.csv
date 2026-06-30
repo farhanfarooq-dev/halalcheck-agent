@@ -1,0 +1,11 @@
+barcode,name,brand,ingredients,manufacturer_email,official_certificate_available
+4000000000010,Strawberry Candy Demo,SweetLab,"Sugar glucose syrup E120 flavouring",qa@sweetlab.example,0
+4000000000027,Plain Oat Drink Demo,GreenCup,"Water oats sunflower oil salt",info@greencup.example,0
+4000000000034,Chocolate Biscuit Demo,BakeHouse,"Wheat flour sugar cocoa butter E471 aroma",quality@bakehouse.example,0
+4000000000041,Beef Gelatine Dessert Demo,DessertPro,"Sugar gelatine citric acid flavouring",support@dessertpro.example,0
+4000000000058,Vegan Chips Demo,CrispFarm,"Potatoes sunflower oil salt paprika",hello@crispfarm.example,0
+4000000000065,Cheese Snack Demo,CheeseWay,"Milk whey rennet salt enzymes",contact@cheeseway.example,0
+4000000000072,Pork Noodle Demo,QuickMeal,"Noodles pork extract soy sauce flavouring",care@quickmeal.example,0
+4000000000089,Certified Date Bar Demo,DatePure,"Dates almonds sesame",certs@datepure.example,1
+4000000000096,Gummy Bears Demo,FruitJoy,"Glucose syrup sugar E441 citric acid aroma",info@fruitjoy.example,0
+4000000000102,Vanilla Pudding Demo,CreamyCo,"Milk sugar glycerine natural flavouring",service@creamyco.example,0
