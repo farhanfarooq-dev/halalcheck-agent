@@ -1,4 +1,4 @@
-# AI HalalCheck Agent
+﻿# AI HalalCheck Agent
 
 AI HalalCheck Agent is a bootcamp MVP for checking whether food products are
 halal-suitable. It combines a Streamlit user interface, a lightweight FastAPI
@@ -7,6 +7,14 @@ manufacturer confirmation handling, and optional AI/RAG explanations.
 
 This project is decision support only. It does not issue official halal
 certification.
+
+## Metrics
+
+- 34 automated tests passed.
+- 4 FastAPI endpoints.
+- Streamlit UI with Product Check, History, and Admin Response Review pages.
+- SQLite workflow for product checks, manufacturer inquiries, responses, and
+  notifications.
 
 ## Current Features
 
@@ -37,54 +45,80 @@ The main Pydantic schemas are:
 - `ManufacturerResponseRequest`
 - `ManufacturerResponseResult`
 
-## Initialize The Database
+## Environment Variables
+
+Copy `.env.example` to `.env` before running locally:
 
 ```bash
 cd halalcheck-agent
-py database.py
-```
-
-## Environment Variables
-
-Copy `.env.example` to `.env` for local secrets and configuration:
-
-```bash
 copy .env.example .env
 ```
 
-Put real API keys and email credentials only in `.env`. Do not commit `.env`.
+On macOS/Linux:
 
-Example local email configuration:
-
-```env
-EMAIL_MODE=draft
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=halalcheckde@gmail.com
-SMTP_PASSWORD=your_app_password_here
-FROM_EMAIL=halalcheckde@gmail.com
-SENDER_DISPLAY_NAME=Your Name
-REPLY_TO_EMAIL=your_reply_email@example.com
+```bash
+cp .env.example .env
 ```
 
-`EMAIL_MODE=draft` is the default. In the MVP, no real emails are sent. The app
-and API create human-reviewable drafts only.
+Keep real API keys and email credentials only in `.env`. `.env` must not be
+committed or copied into Docker images. The committed `.env.example` contains
+safe placeholders only.
 
-The manufacturer email address must be entered by the user for each product.
-The user/customer email address must also be entered by the user if they want a
-notification draft.
+Important MVP defaults:
 
-Use a human sender display name such as your own name in
-`SENDER_DISPLAY_NAME`. This makes manufacturer inquiries look like normal
-customer messages and can improve the chance of receiving a helpful reply. The
-displayed sender is built from `SENDER_DISPLAY_NAME <FROM_EMAIL>`, and
-`REPLY_TO_EMAIL` can be set when replies should go to a different address.
+```env
+LLM_PROVIDER=local
+EMAIL_MODE=draft
+DATABASE_PATH=data/halalcheck.db
+```
 
-## Run The Streamlit UI
+`EMAIL_MODE=draft` is the default. In this MVP, no real emails are sent. The
+app and API create human-reviewable manufacturer inquiry drafts and user
+notification drafts only.
+
+## Run Locally With Python
+
+Create and activate a virtual environment:
 
 ```bash
 cd halalcheck-agent
+py -m venv .venv
+.venv\Scripts\activate
+py -m pip install -r requirements.txt
+```
+
+On macOS/Linux, use:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+Initialize SQLite seed data:
+
+```bash
+py database.py
+```
+
+On macOS/Linux:
+
+```bash
+python database.py
+```
+
+## Run The Streamlit UI
+
+Start Streamlit:
+
+```bash
 py -m streamlit run app.py
+```
+
+Open:
+
+```text
+http://localhost:8501
 ```
 
 Streamlit is the main user interface for product checks, barcode lookup,
@@ -92,12 +126,21 @@ manual ingredient entry, check history, and admin response review.
 
 ## Run The FastAPI Backend
 
+Start FastAPI:
+
 ```bash
-cd halalcheck-agent
 py -m uvicorn api:app --reload
 ```
 
-Open the interactive FastAPI docs at:
+The API runs at:
+
+```text
+http://127.0.0.1:8000
+```
+
+## Open FastAPI Docs
+
+Open the interactive Swagger documentation at:
 
 ```text
 http://127.0.0.1:8000/docs
@@ -124,6 +167,62 @@ curl -X POST http://127.0.0.1:8000/manufacturer-response ^
   -H "Content-Type: application/json" ^
   -d "{\"inquiry_id\":1,\"response_text\":\"The E471 used in this product is plant-based.\"}"
 ```
+
+## Run Tests
+
+```bash
+py -m pytest
+```
+
+Expected submission result:
+
+```text
+34 passed
+```
+
+## Run With Docker
+
+Build the image:
+
+```bash
+docker build -t halalcheck-agent .
+```
+
+Run FastAPI:
+
+```bash
+docker run --rm -p 8000:8000 --env EMAIL_MODE=draft halalcheck-agent
+```
+
+Run Streamlit:
+
+```bash
+docker run --rm -p 8501:8501 --env EMAIL_MODE=draft halalcheck-agent streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+```
+
+## Run With Docker Compose
+
+Start both services:
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+```text
+Streamlit: http://localhost:8501
+FastAPI docs: http://localhost:8000/docs
+```
+
+Stop the services:
+
+```bash
+docker compose down
+```
+
+Compose keeps `EMAIL_MODE=draft` by default and stores SQLite data in a named
+Docker volume.
 
 ## Future Extensions
 

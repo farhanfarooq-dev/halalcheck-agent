@@ -1,0 +1,59 @@
+﻿services:
+  api:
+    build: .
+    command: uvicorn api:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI-HalalCheck-Agent}
+      APP_VERSION: ${APP_VERSION:-1.0}
+      DATABASE_PATH: ${DATABASE_PATH:-/app/data/halalcheck.db}
+      LLM_PROVIDER: ${LLM_PROVIDER:-local}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      OPENFOODFACTS_BASE_URL: ${OPENFOODFACTS_BASE_URL:-https://world.openfoodfacts.org}
+      EMAIL_MODE: ${EMAIL_MODE:-draft}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FROM_EMAIL: ${FROM_EMAIL:-your_sender_email@example.com}
+      SENDER_DISPLAY_NAME: ${SENDER_DISPLAY_NAME:-Your Name}
+      REPLY_TO_EMAIL: ${REPLY_TO_EMAIL:-your_reply_email@example.com}
+    volumes:
+      - halalcheck-data:/app/data
+
+  streamlit:
+    build: .
+    command: streamlit run app.py --server.address 0.0.0.0 --server.port 8501
+    ports:
+      - "8501:8501"
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      APP_NAME: ${APP_NAME:-AI-HalalCheck-Agent}
+      APP_VERSION: ${APP_VERSION:-1.0}
+      DATABASE_PATH: ${DATABASE_PATH:-/app/data/halalcheck.db}
+      LLM_PROVIDER: ${LLM_PROVIDER:-local}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      OPENFOODFACTS_BASE_URL: ${OPENFOODFACTS_BASE_URL:-https://world.openfoodfacts.org}
+      EMAIL_MODE: ${EMAIL_MODE:-draft}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      FROM_EMAIL: ${FROM_EMAIL:-your_sender_email@example.com}
+      SENDER_DISPLAY_NAME: ${SENDER_DISPLAY_NAME:-Your Name}
+      REPLY_TO_EMAIL: ${REPLY_TO_EMAIL:-your_reply_email@example.com}
+    volumes:
+      - halalcheck-data:/app/data
+    depends_on:
+      - api
+
+volumes:
+  halalcheck-data:

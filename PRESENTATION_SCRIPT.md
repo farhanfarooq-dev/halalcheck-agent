@@ -1,62 +1,77 @@
-# Presentation Script
+﻿# Presentation Script
 
-Today I am presenting AI HalalCheck Agent, a multilingual food product checking
-app that combines rule-based ingredient analysis, optional AI explanations,
-database workflows, manufacturer confirmation handling, a Streamlit UI, and a
-FastAPI backend.
+## 3-5 Minute Demo
 
-The user can start in the Streamlit interface by entering a barcode, product
-name, brand, ingredients, manufacturer email, optional customer email, language,
-and whether an official halal certificate is available. The app checks the
-barcode through Open Food Facts when possible and falls back to manual input
-when needed.
+Hi, today I am presenting AI HalalCheck Agent. It is a bootcamp MVP for checking
+whether a food product appears halal-suitable, while clearly separating
+decision support from official halal certification.
 
+First I will open the Streamlit app. The first page is Product Check. Here I can
+enter a barcode, product name, brand, ingredient list, manufacturer email,
+optional customer email, language, and whether an official halal certificate is
+available. If I enter a barcode, the product lookup agent tries Open Food Facts.
+If barcode data is missing, the app still works with manual input.
+
+For the demo, I will check a product with a doubtful ingredient such as E471.
 The ingredient analysis uses explicit rules for common E-codes and ingredients
-such as gelatin, E471, carmine, alcohol, pork, lard, enzymes, emulsifiers, and
-flavouring. The decision logic then returns a clear preliminary status, such as
-`No Concern Found`, `Doubtful / Needs Verification`, `Not Halal`, `Unknown`,
-`Manufacturer Confirmed Suitable`, or `Halal Certified`.
+including gelatin, E471, carmine, alcohol, pork, lard, enzymes, emulsifiers, and
+flavouring. The decision agent returns a status such as `No Concern Found`,
+`Doubtful / Needs Verification`, `Not Halal`, `Unknown`, `Manufacturer
+Confirmed Suitable`, or `Halal Certified`.
 
-The system is careful about certification wording. `Halal Certified` is only
-used when an official halal certificate is available. `Manufacturer Confirmed
-Suitable` is useful manufacturer evidence, but it is not the same as `Halal
-Certified`.
+The important safety rule is that the system never claims `Halal Certified`
+unless an official certificate is available. A manufacturer answer can lead to
+`Manufacturer Confirmed Suitable`, but that is still not the same as an
+official certificate.
 
-The project also includes a FastAPI backend. It uses Pydantic request and
-response schemas for validation and exposes four endpoints:
+Next I will show the explanation. The app can use OpenAI or Gemini if keys are
+configured, but the default demo mode is local explanation, so the project works
+without exposing API secrets. Email is also safe by default:
+`EMAIL_MODE=draft`. The app creates a manufacturer inquiry draft, but it does
+not send a real email.
+
+Now I will open the History page. This shows previous product checks stored in
+SQLite. The database tracks product checks, manufacturer inquiries,
+manufacturer responses, and notification drafts.
+
+Then I will open Admin Response Review. Here an admin can paste a manufacturer
+reply, such as a statement that E471 is plant-based. The app analyzes the
+response, stores it, updates the inquiry, and creates a draft notification for
+the user if a customer email was provided.
+
+One useful workflow feature is stored confirmation reuse. If the same barcode,
+doubtful ingredient, and ingredient list appear again, the app can reuse the
+stored manufacturer confirmation. If the ingredients change, it requires a new
+review instead of trusting old evidence.
+
+The project also includes a FastAPI backend. I will open
+`http://127.0.0.1:8000/docs` to show the generated Swagger documentation. The
+backend exposes four endpoints:
 
 - `GET /health`
 - `POST /check-product`
 - `GET /product-status/{barcode}`
 - `POST /manufacturer-response`
 
-The backend reuses the same agent workflow as Streamlit: barcode lookup, manual
-fallback, ingredient analysis, local or AI-assisted explanation, stored
-manufacturer confirmation reuse, duplicate inquiry prevention, and manufacturer
-response analysis.
+The backend reuses the same workflow as Streamlit: barcode lookup, manual
+fallback, ingredient analysis, explanation generation, inquiry draft creation,
+response analysis, and stored confirmation reuse.
 
-To run the Streamlit UI:
+For project completeness, the repo includes 34 passing automated tests, Docker
+support, Docker Compose support, `.env.example`, and documentation for local
+Python, Streamlit, FastAPI, tests, and container runs.
+
+The main run commands are:
 
 ```bash
 py -m streamlit run app.py
-```
-
-To run the FastAPI backend:
-
-```bash
 py -m uvicorn api:app --reload
+py -m pytest
+docker compose up --build
 ```
 
-The FastAPI documentation is available at:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-For email safety, the MVP keeps `EMAIL_MODE=draft`. No real emails are sent.
-Manufacturer inquiry emails and user notifications are created as drafts for
-human review.
-
-Future extensions could include MCP integration, n8n automation, real Gmail
-sending after review and consent, LangGraph orchestration, ChromaDB or FAISS
-for stronger retrieval, and cloud deployment.
+The main limitations are that halal suitability still needs human judgment,
+Open Food Facts data can be incomplete, and real email sending is intentionally
+disabled for the MVP. Future improvements could add reviewed email sending,
+stronger retrieval, LangGraph orchestration, MCP tools, n8n workflows, and
+cloud deployment.

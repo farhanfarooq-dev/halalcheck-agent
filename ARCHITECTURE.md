@@ -1,7 +1,26 @@
-# Architecture
+﻿# Architecture
 
 AI HalalCheck Agent is built as a small modular MVP. The same core agent logic
 is reused by both the Streamlit UI and the FastAPI backend.
+
+## Architecture Diagram
+
+```mermaid
+flowchart TD
+    User["User / Admin"] --> Streamlit["Streamlit UI<br/>Product Check<br/>History<br/>Admin Response Review"]
+    Integrator["API Client"] --> FastAPI["FastAPI Backend<br/>4 endpoints + Pydantic schemas"]
+    Streamlit --> Workflow["Agent Workflow<br/>lookup -> analyze -> decide -> explain -> draft/reuse"]
+    FastAPI --> Workflow
+    Workflow --> OFF["Open Food Facts API<br/>barcode lookup"]
+    Workflow --> Rules["Rule-Based Ingredient Checker<br/>ingredients + E-codes"]
+    Workflow --> Explain["OpenAI / Gemini / Local Explanation<br/>local fallback by default"]
+    Workflow --> Email["Draft Email Service<br/>EMAIL_MODE=draft"]
+    Workflow --> SQLite["SQLite Storage<br/>products, checks, inquiries,<br/>responses, notifications"]
+    SQLite --> Reuse["Stored Confirmation Reuse<br/>same barcode + ingredient + list"]
+    Reuse --> Workflow
+    Admin["Admin Reviewer"] --> Streamlit
+    Streamlit --> SQLite
+```
 
 ## Main Components
 
@@ -23,7 +42,10 @@ is reused by both the Streamlit UI and the FastAPI backend.
 
 The Streamlit UI is the main human-facing workflow. It supports barcode input,
 manual product details, ingredient analysis, AI/local explanations, check
-history, pending inquiry review, and manufacturer response review.
+history, pending inquiry review, and Admin Response Review. Admin Response
+Review lets a reviewer paste a manufacturer reply, store the evidence, update
+the inquiry status, and create a draft notification for the user when a user
+email is available.
 
 The FastAPI backend exposes the same workflow for programmatic use. It uses
 Pydantic request and response schemas to validate inputs and keep API responses
@@ -48,6 +70,23 @@ The API uses these Pydantic schemas:
 - `ManufacturerResponseRequest`
 - `ManufacturerResponseResult`
 
+## Agent Workflow
+
+The workflow is intentionally simple for the bootcamp MVP:
+
+- Product lookup agent: uses Open Food Facts for barcode lookup and keeps
+  manual input as a fallback.
+- Ingredient analysis agent: detects acceptable, doubtful, not-halal, and
+  unknown ingredients using explicit rules.
+- Decision agent: produces the final status while keeping certification claims
+  conservative.
+- Communication agent: creates a local explanation by default, with optional
+  OpenAI or Gemini support when configured.
+- Manufacturer inquiry agent: creates draft emails for doubtful cases and
+  prevents duplicate drafts where possible.
+- Manufacturer response analyzer: classifies responses, stores confirmation
+  evidence, and supports later reuse.
+
 ## Data Flow
 
 1. A user enters a barcode or manual product details.
@@ -63,6 +102,14 @@ The API uses these Pydantic schemas:
 7. An admin can paste a manufacturer response through Streamlit or FastAPI.
 8. The response is analyzed, stored, and reused later only when the barcode,
    doubtful ingredient, and ingredient list still match.
+
+## Storage And Reuse
+
+SQLite stores products, product checks, manufacturer inquiries, manufacturer
+responses, and user notification drafts. Stored manufacturer confirmations are
+reused only when the product barcode, doubtful ingredient, and ingredient list
+still match. If ingredients change, the app asks for a new review instead of
+silently trusting old evidence.
 
 ## Safety Rules
 
@@ -92,6 +139,20 @@ FastAPI docs:
 ```text
 http://127.0.0.1:8000/docs
 ```
+
+Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+## Metrics
+
+- 34 automated tests passed.
+- 4 FastAPI endpoints.
+- Streamlit UI with Product Check, History, and Admin Response Review pages.
+- SQLite workflow for product checks, manufacturer inquiries, responses, and
+  notifications.
 
 ## Future Extensions
 
