@@ -10,7 +10,7 @@ certification.
 
 ## Metrics
 
-- 39 automated tests passed.
+- 41 automated tests passed.
 - 4 FastAPI endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and
@@ -23,6 +23,8 @@ certification.
   handling.
 - Pydantic request and response schemas for API validation.
 - Open Food Facts barcode lookup with manual input fallback.
+- Optional ingredient-label image extraction for Streamlit when OpenAI vision
+  support is configured.
 - Rule-based ingredient and E-code checker.
 - Local SQLite database for products, checks, inquiries, responses, and draft
   user notifications.
@@ -76,6 +78,11 @@ DATABASE_PATH=data/halalcheck.db
 app and API create human-reviewable manufacturer inquiry drafts and user
 notification drafts only.
 
+Optional ingredient-label image extraction is available in Streamlit only when
+`LLM_PROVIDER=openai` and `OPENAI_API_KEY` are set locally. The extracted text is
+placed into the editable Ingredients field; the halal check still analyzes only
+the final ingredient text, not the image directly.
+
 ## Run Locally With Python
 
 Create and activate a virtual environment:
@@ -122,7 +129,8 @@ http://localhost:8501
 ```
 
 Streamlit is the main user interface for product checks, barcode lookup,
-manual ingredient entry, check history, and admin response review.
+manual ingredient entry, optional ingredient-label image extraction, check
+history, and admin response review.
 
 ## Run The FastAPI Backend
 
@@ -177,7 +185,7 @@ py -m pytest
 Expected submission result:
 
 ```text
-39 passed
+41 passed
 ```
 
 ## Run With Docker

@@ -148,7 +148,7 @@ docker compose up --build
 
 ## Metrics
 
-- 39 automated tests passed.
+- 41 automated tests passed.
 - 4 FastAPI endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and

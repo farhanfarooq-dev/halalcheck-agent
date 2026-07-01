@@ -10,7 +10,11 @@ First I will open the Streamlit app. The first page is Product Check. Here I can
 enter a barcode, product name, brand, ingredient list, manufacturer email,
 optional customer email, language, and whether an official halal certificate is
 available. If I enter a barcode, the product lookup agent tries Open Food Facts.
-If barcode data is missing, the app still works with manual input.
+If barcode data is missing, the app still works with manual input. There is
+also an optional ingredient-label image upload. When OpenAI vision support is
+configured, the app extracts the ingredient list into the editable Ingredients
+field, and the normal halal check still runs on that text rather than directly
+on the image.
 
 For the demo, I will check a product with a doubtful ingredient such as E471.
 The ingredient analysis uses explicit rules for common E-codes and ingredients
@@ -57,7 +61,7 @@ The backend reuses the same workflow as Streamlit: barcode lookup, manual
 fallback, ingredient analysis, explanation generation, inquiry draft creation,
 response analysis, and stored confirmation reuse.
 
-For project completeness, the repo includes 39 passing automated tests, Docker
+For project completeness, the repo includes 41 passing automated tests, Docker
 support, Docker Compose support, `.env.example`, and documentation for local
 Python, Streamlit, FastAPI, tests, and container runs.
 

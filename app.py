@@ -19,6 +19,7 @@ from agents import (
     _product_manual_hash,
 )
 from database import DB_PATH, get_connection, initialize_database
+from image_extraction import extract_ingredients_from_image
 
 
 st.set_page_config(page_title="AI HalalCheck Agent", page_icon="AH", layout="wide")
@@ -50,11 +51,31 @@ def show_product_check_page() -> None:
     """Collect product details, run agents, and display the result."""
     st.header("Product Check")
 
+    if "ingredients_text" not in st.session_state:
+        st.session_state["ingredients_text"] = ""
+
+    uploaded_image = st.file_uploader(
+        "Upload ingredient label image (optional)",
+        type=["png", "jpg", "jpeg"],
+    )
+    if st.button("Extract ingredients from image"):
+        if uploaded_image is None:
+            st.warning("Please upload an ingredient label image first.")
+        else:
+            extraction_result = extract_ingredients_from_image(uploaded_image)
+            if extraction_result["status"] == "ok":
+                st.session_state["ingredients_text"] = extraction_result[
+                    "ingredients_text"
+                ]
+                st.success(extraction_result["message"])
+            else:
+                st.info(extraction_result["message"])
+
     with st.form("product_check_form"):
         barcode = st.text_input("Barcode")
         product_name = st.text_input("Product name")
         brand = st.text_input("Brand")
-        ingredients = st.text_area("Ingredients", height=140)
+        ingredients = st.text_area("Ingredients", height=140, key="ingredients_text")
         manufacturer_email = st.text_input("Manufacturer email")
         user_email = st.text_input("User/customer email (optional)")
         language_label = st.selectbox("Language", ["English", "German"])
