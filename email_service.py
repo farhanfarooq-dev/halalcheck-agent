@@ -17,14 +17,14 @@ import config
 
 def generate_manufacturer_email_draft(
     product_data: dict[str, Any],
-    doubtful_issue: dict[str, str],
+    doubtful_issue: dict[str, str] | list[dict[str, str]],
 ) -> dict[str, str]:
     """Create a short, natural customer email draft."""
     product_label = _product_label(product_data)
     product_name_line = f"Product: {product_label}"
     brand = str(product_data.get("brand") or "").strip()
     barcode = str(product_data.get("barcode") or "").strip()
-    ingredient = doubtful_issue.get("ingredient") or "the ingredient"
+    ingredients = _ingredient_names(doubtful_issue)
     signature = _signature()
 
     detail_lines = [product_name_line]
@@ -32,16 +32,25 @@ def generate_manufacturer_email_draft(
         detail_lines.append(f"Brand: {brand}")
     if barcode:
         detail_lines.append(f"Barcode: {barcode}")
-    detail_lines.append(f"Ingredient: {ingredient}")
+    if len(ingredients) == 1:
+        detail_lines.append(f"Ingredient: {ingredients[0]}")
+        ingredient_question = "Could you please confirm the source of this ingredient?"
+    else:
+        detail_lines.append("Ingredients:")
+        detail_lines.extend(f"- {ingredient}" for ingredient in ingredients)
+        ingredient_question = (
+            "Could you please confirm the source of the following ingredients?"
+        )
 
     body = (
         "Dear Sir or Madam,\n\n"
         "I hope you are well.\n\n"
-        "I have a question about one of the ingredients in your product:\n\n"
+        "I have a question about ingredients in your product:\n\n"
         + "\n".join(detail_lines)
         + "\n\n"
-        "Could you please confirm the source of this ingredient? For example, "
-        "is it plant-based, animal-based, microbial, synthetic, or alcohol-derived?\n\n"
+        + ingredient_question
+        + " For example, are they plant-based, animal-based, microbial, "
+        "synthetic, or alcohol-derived?\n\n"
         "This information would help me understand whether the product is suitable "
         "for my dietary requirements.\n\n"
         "Thank you very much for your help.\n\n"
@@ -54,6 +63,19 @@ def generate_manufacturer_email_draft(
         "sender": _formatted_sender(),
         "reply_to": config.REPLY_TO_EMAIL.strip(),
     }
+
+
+def _ingredient_names(
+    doubtful_issue: dict[str, str] | list[dict[str, str]],
+) -> list[str]:
+    if isinstance(doubtful_issue, dict):
+        ingredients = [str(doubtful_issue.get("ingredient") or "the ingredient").strip()]
+    else:
+        ingredients = [
+            str(issue.get("ingredient") or "").strip()
+            for issue in doubtful_issue
+        ]
+    return [ingredient for ingredient in ingredients if ingredient] or ["the ingredient"]
 
 
 def send_email(

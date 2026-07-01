@@ -1,4 +1,4 @@
-﻿# Architecture
+# Architecture
 
 AI HalalCheck Agent is built as a small modular MVP. The same core agent logic
 is reused by both the Streamlit UI and the FastAPI backend.
@@ -148,7 +148,7 @@ docker compose up --build
 
 ## Metrics
 
-- 34 automated tests passed.
+- 39 automated tests passed.
 - 4 FastAPI endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and

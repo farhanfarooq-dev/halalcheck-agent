@@ -19,33 +19,51 @@ from agents import (
     manufacturer_inquiry_agent,
     product_lookup_agent,
     user_communication_agent,
+    _product_manual_hash,
 )
 
 
 def _insert_product_confirmation(
     db_path: Path,
-    barcode: str = "VERIFY-001",
+    barcode: str | None = "VERIFY-001",
+    product_name: str = "Verified Product",
+    brand: str = "Brand",
     ingredients: str = "Sugar, E471",
+    requested_ingredients: list[str] | None = None,
     analyzed_status: str = STATUS_MANUFACTURER_CONFIRMED,
+    confirmed_ingredients: list[str] | None = None,
+    unresolved_ingredients: list[str] | None = None,
 ) -> int:
     initialize_database(db_path)
+    requested_ingredients = requested_ingredients or ["E471"]
+    confirmed_ingredients = confirmed_ingredients or (
+        requested_ingredients if analyzed_status == STATUS_MANUFACTURER_CONFIRMED else []
+    )
+    unresolved_ingredients = unresolved_ingredients or []
+    ingredient_term = ", ".join(requested_ingredients)
+    manual_hash = _product_manual_hash(
+        {"name": product_name, "brand": brand, "ingredients": ingredients}
+    )
     with closing(get_connection(db_path)) as connection:
         cursor = connection.execute(
             """
-            INSERT INTO products (barcode, name, brand, ingredients, manufacturer_email, source)
-            VALUES (?, 'Verified Product', 'Brand', ?, 'maker@example.com', 'manual');
+            INSERT INTO products (
+                barcode, name, brand, ingredients, manual_product_hash, manufacturer_email, source
+            )
+            VALUES (?, ?, ?, ?, ?, 'maker@example.com', 'manual');
             """,
-            (barcode, ingredients),
+            (barcode, product_name, brand, ingredients, manual_hash),
         )
         product_id = int(cursor.lastrowid)
         inquiry = connection.execute(
             """
             INSERT INTO manufacturer_inquiries (
-                product_id, ingredient_term, manufacturer_email, email_subject, email_body, status
+                product_id, ingredient_term, requested_ingredients_json, manufacturer_email,
+                email_subject, email_body, status
             )
-            VALUES (?, 'E471', 'maker@example.com', 'Question about ingredient source', 'body', 'response_received');
+            VALUES (?, ?, ?, 'maker@example.com', 'Question about ingredient source', 'body', 'response_received');
             """,
-            (product_id,),
+            (product_id, ingredient_term, __import__("json").dumps(requested_ingredients)),
         )
         connection.execute(
             """
@@ -56,14 +74,23 @@ def _insert_product_confirmation(
                 analysis_notes,
                 ingredients_text,
                 doubtful_ingredient,
+                confirmed_ingredients_json,
+                unresolved_ingredients_json,
                 verification_source,
                 response_date,
                 recheck_required
             )
-            VALUES (?, 'E471 is plant-based.', ?, 'Confirmed plant-based.', ?, 'E471',
+            VALUES (?, 'All requested ingredients are plant-based.', ?, 'Stored test response.', ?, ?, ?, ?,
                     'manufacturer_response', CURRENT_TIMESTAMP, 0);
             """,
-            (int(inquiry.lastrowid), analyzed_status, ingredients),
+            (
+                int(inquiry.lastrowid),
+                analyzed_status,
+                ingredients,
+                ingredient_term,
+                __import__("json").dumps(confirmed_ingredients),
+                __import__("json").dumps(unresolved_ingredients),
+            ),
         )
         connection.commit()
     return product_id
@@ -336,3 +363,147 @@ def test_manufacturer_confirmed_suitable_is_not_halal_certified(tmp_path: Path) 
     assert decision["status"] == STATUS_MANUFACTURER_CONFIRMED
     assert decision["status"] != STATUS_HALAL_CERTIFIED
     assert REQUIRED_CERTIFICATION_LIMIT_PHRASE in message["explanation"]
+
+
+def test_manual_product_reuses_stored_confirmation_by_identity(tmp_path: Path) -> None:
+    db_path = tmp_path / "manual-reuse.db"
+    _insert_product_confirmation(
+        db_path,
+        barcode=None,
+        product_name="Manual Cookie",
+        brand="Small Brand",
+        ingredients="Sugar, E471",
+    )
+
+    product = product_lookup_agent(
+        product_name="Manual Cookie",
+        brand="Small Brand",
+        ingredients="Sugar, E471",
+        manufacturer_email="maker@example.com",
+        db_path=db_path,
+    )
+    analysis = ingredient_analysis_agent(product)
+    decision = halal_decision_agent(product, analysis, db_path=db_path)
+    inquiry = manufacturer_inquiry_agent(product, decision, analysis, db_path=db_path)
+
+    assert decision["status"] == STATUS_MANUFACTURER_CONFIRMED
+    assert decision["result_source"] == "stored manufacturer confirmation"
+    assert inquiry["status"] == "not_required"
+
+
+def test_inquiry_draft_includes_multiple_doubtful_ingredients(tmp_path: Path) -> None:
+    db_path = tmp_path / "multi-inquiry.db"
+    product = product_lookup_agent(
+        product_name="Aroma Biscuit",
+        brand="Brand",
+        ingredients="Sugar, E471, aroma",
+        manufacturer_email="quality@example.com",
+        db_path=db_path,
+    )
+    analysis = ingredient_analysis_agent(product)
+    decision = halal_decision_agent(product, analysis, db_path=db_path)
+    inquiry = manufacturer_inquiry_agent(product, decision, analysis, db_path=db_path)
+
+    assert inquiry["status"] == "draft_created"
+    assert inquiry["requested_ingredients"] == ["E471", "aroma"]
+    assert "- E471" in inquiry["inquiry"]["email_body"]
+    assert "- aroma" in inquiry["inquiry"]["email_body"]
+    assert "following ingredients" in inquiry["inquiry"]["email_body"]
+
+
+def test_admin_response_confirming_all_doubtful_ingredients_is_reused(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "all-confirmed.db"
+    _insert_product_confirmation(
+        db_path,
+        barcode=None,
+        product_name="Multi Cookie",
+        brand="Brand",
+        ingredients="Sugar, E471, aroma",
+        requested_ingredients=["E471", "aroma"],
+        confirmed_ingredients=["E471", "aroma"],
+    )
+
+    product = product_lookup_agent(
+        product_name="Multi Cookie",
+        brand="Brand",
+        ingredients="Sugar, E471, aroma",
+        db_path=db_path,
+    )
+    analysis = ingredient_analysis_agent(product)
+    decision = halal_decision_agent(product, analysis, db_path=db_path)
+
+    assert decision["status"] == STATUS_MANUFACTURER_CONFIRMED
+    assert decision["result_source"] == "stored manufacturer confirmation"
+
+
+def test_admin_response_confirming_one_of_multiple_ingredients_stays_doubtful(
+    tmp_path: Path,
+) -> None:
+    response = analyze_manufacturer_response(
+        "The E471 used in this product is plant-based.",
+        ["E471", "aroma"],
+    )
+    assert response["analyzed_status"] == STATUS_STILL_DOUBTFUL
+    assert response["confirmed_ingredients"] == ["E471"]
+    assert response["unresolved_ingredients"] == ["aroma"]
+
+    db_path = tmp_path / "partial-confirmed.db"
+    _insert_product_confirmation(
+        db_path,
+        barcode=None,
+        product_name="Partial Cookie",
+        brand="Brand",
+        ingredients="Sugar, E471, aroma",
+        requested_ingredients=["E471", "aroma"],
+        analyzed_status=STATUS_STILL_DOUBTFUL,
+        confirmed_ingredients=["E471"],
+        unresolved_ingredients=["aroma"],
+    )
+    product = product_lookup_agent(
+        product_name="Partial Cookie",
+        brand="Brand",
+        ingredients="Sugar, E471, aroma",
+        db_path=db_path,
+    )
+    analysis = ingredient_analysis_agent(product)
+    decision = halal_decision_agent(product, analysis, db_path=db_path)
+
+    assert decision["status"] == FINAL_DOUBTFUL
+    assert decision["result_source"] == "fresh ingredient analysis"
+
+
+def test_duplicate_inquiry_not_created_after_stored_confirmation_exists(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "no-duplicate-after-confirmation.db"
+    _insert_product_confirmation(
+        db_path,
+        barcode=None,
+        product_name="Reuse Cookie",
+        brand="Brand",
+        ingredients="Sugar, E471, aroma",
+        requested_ingredients=["E471", "aroma"],
+        confirmed_ingredients=["E471", "aroma"],
+    )
+
+    product = product_lookup_agent(
+        product_name="Reuse Cookie",
+        brand="Brand",
+        ingredients="Sugar, E471, aroma",
+        manufacturer_email="maker@example.com",
+        db_path=db_path,
+    )
+    analysis = ingredient_analysis_agent(product)
+    decision = halal_decision_agent(product, analysis, db_path=db_path)
+    inquiry = manufacturer_inquiry_agent(product, decision, analysis, db_path=db_path)
+
+    with closing(get_connection(db_path)) as connection:
+        inquiry_count = connection.execute(
+            "SELECT COUNT(*) FROM manufacturer_inquiries;"
+        ).fetchone()[0]
+
+    assert decision["status"] == STATUS_MANUFACTURER_CONFIRMED
+    assert inquiry["status"] == "not_required"
+    assert inquiry_count == 1

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import re
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -24,6 +26,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         name TEXT NOT NULL,
         brand TEXT,
         ingredients TEXT,
+        manual_product_hash TEXT,
         manufacturer_email TEXT,
         source TEXT NOT NULL DEFAULT 'manual',
         official_certificate_available INTEGER NOT NULL DEFAULT 0,
@@ -62,6 +65,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         product_id INTEGER NOT NULL,
         ingredient_term TEXT NOT NULL,
+        requested_ingredients_json TEXT,
         manufacturer_email TEXT,
         email_subject TEXT NOT NULL,
         email_body TEXT NOT NULL,
@@ -80,6 +84,8 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         analysis_notes TEXT,
         ingredients_text TEXT,
         doubtful_ingredient TEXT,
+        confirmed_ingredients_json TEXT,
+        unresolved_ingredients_json TEXT,
         verification_source TEXT NOT NULL DEFAULT 'manufacturer_response',
         response_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         verification_expiry_date TEXT,
@@ -123,6 +129,21 @@ def create_tables(connection: sqlite3.Connection) -> None:
 
 def _add_missing_columns(connection: sqlite3.Connection) -> None:
     """Add new columns when an existing SQLite database is upgraded."""
+    product_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(products);")
+    }
+    if "manual_product_hash" not in product_columns:
+        connection.execute("ALTER TABLE products ADD COLUMN manual_product_hash TEXT;")
+
+    inquiry_columns = {
+        row["name"]
+        for row in connection.execute("PRAGMA table_info(manufacturer_inquiries);")
+    }
+    if "requested_ingredients_json" not in inquiry_columns:
+        connection.execute(
+            "ALTER TABLE manufacturer_inquiries ADD COLUMN requested_ingredients_json TEXT;"
+        )
+
     response_columns = {
         row["name"]
         for row in connection.execute("PRAGMA table_info(manufacturer_responses);")
@@ -130,6 +151,8 @@ def _add_missing_columns(connection: sqlite3.Connection) -> None:
     columns_to_add = {
         "ingredients_text": "TEXT",
         "doubtful_ingredient": "TEXT",
+        "confirmed_ingredients_json": "TEXT",
+        "unresolved_ingredients_json": "TEXT",
         "verification_source": "TEXT NOT NULL DEFAULT 'manufacturer_response'",
         "response_date": "TEXT",
         "verification_expiry_date": "TEXT",
@@ -140,7 +163,46 @@ def _add_missing_columns(connection: sqlite3.Connection) -> None:
             connection.execute(
                 f"ALTER TABLE manufacturer_responses ADD COLUMN {column_name} {column_type};"
             )
+    _backfill_manual_product_hashes(connection)
 
+
+
+def _backfill_manual_product_hashes(connection: sqlite3.Connection) -> None:
+    """Populate stable manual identities for existing rows."""
+    rows = connection.execute(
+        """
+        SELECT id, name, brand, ingredients
+        FROM products
+        WHERE manual_product_hash IS NULL OR manual_product_hash = '';
+        """
+    ).fetchall()
+    for row in rows:
+        connection.execute(
+            "UPDATE products SET manual_product_hash = ? WHERE id = ?;",
+            (
+                _manual_product_hash(
+                    str(row["name"] or "Manual product"),
+                    str(row["brand"] or ""),
+                    str(row["ingredients"] or ""),
+                ),
+                row["id"],
+            ),
+        )
+
+
+def _manual_product_hash(product_name: str, brand: str, ingredients: str) -> str:
+    identity = "|".join(
+        [
+            _normalize_text(product_name),
+            _normalize_text(brand),
+            _normalize_text(ingredients),
+        ]
+    )
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def _normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().lower())
 
 def seed_ingredient_rules(connection: sqlite3.Connection) -> None:
     """Load ingredient rules from CSV into SQLite if the table is empty."""
@@ -244,6 +306,8 @@ def initialize_database(db_path: Path = DB_PATH) -> Path:
         create_tables(connection)
         seed_ingredient_rules(connection)
         seed_sample_products(connection)
+        _backfill_manual_product_hashes(connection)
+        connection.commit()
     return db_path
 
 

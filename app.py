@@ -16,6 +16,7 @@ from agents import (
     manufacturer_inquiry_agent,
     product_lookup_agent,
     user_communication_agent,
+    _product_manual_hash,
 )
 from database import DB_PATH, get_connection, initialize_database
 
@@ -136,6 +137,7 @@ def display_product_result(
                 "source": product.get("source"),
                 "result_source": decision.get("result_source")
                 or product.get("result_source"),
+                "product_identity_key": product.get("product_identity_key"),
                 "recheck_required": product.get("recheck_required"),
                 "manufacturer_email": product.get("manufacturer_email"),
             }
@@ -194,6 +196,9 @@ def display_product_result(
             value=str(inquiry_data.get("reply_to") or ""),
             disabled=True,
         )
+        requested_ingredients = inquiry_data.get("requested_ingredients") or inquiry.get("requested_ingredients") or []
+        if requested_ingredients:
+            st.write({"requested_doubtful_ingredients": requested_ingredients})
         st.text_input(
             "Draft subject",
             value=str(inquiry_data.get("email_subject") or ""),
@@ -272,9 +277,10 @@ def show_admin_response_review_page() -> None:
         value=str(selected_inquiry["barcode"] or ""),
         disabled=True,
     )
+    requested_ingredients = _requested_ingredients_from_inquiry(selected_inquiry)
     st.text_input(
-        "Doubtful ingredient",
-        value=str(selected_inquiry["ingredient_term"] or ""),
+        "Doubtful ingredients being confirmed",
+        value=", ".join(requested_ingredients),
         disabled=True,
     )
     st.text_input(
@@ -298,11 +304,13 @@ def show_admin_response_review_page() -> None:
     )
 
     response_text = st.text_area("Paste manufacturer response", height=180)
-    response_analysis = analyze_manufacturer_response(response_text)
+    response_analysis = analyze_manufacturer_response(response_text, requested_ingredients)
     st.write(
         {
             "analyzed_status": response_analysis["analyzed_status"],
             "analysis_notes": response_analysis["analysis_notes"],
+            "confirmed_ingredients": response_analysis.get("confirmed_ingredients", []),
+            "unresolved_ingredients": response_analysis.get("unresolved_ingredients", []),
         }
     )
     st.caption(
@@ -320,6 +328,8 @@ def show_admin_response_review_page() -> None:
             response_text=response_text,
             analyzed_status=response_analysis["analyzed_status"],
             analysis_notes=response_analysis["analysis_notes"],
+            confirmed_ingredients=response_analysis.get("confirmed_ingredients", []),
+            unresolved_ingredients=response_analysis.get("unresolved_ingredients", []),
             product_id=int(selected_inquiry["product_id"]),
             product_name=str(selected_inquiry["product_name"]),
             ingredients_text=str(selected_inquiry["ingredients"] or ""),
@@ -332,32 +342,43 @@ def save_product(product: dict[str, Any]) -> int:
     """Insert or update a product and return its database id."""
     with closing(get_connection(DB_PATH)) as connection:
         barcode = product.get("barcode")
+        manual_hash = _product_manual_hash(product)
+        product["manual_product_hash"] = manual_hash
+        product["product_identity_key"] = barcode or manual_hash
+
         if barcode:
             existing = connection.execute(
                 "SELECT id FROM products WHERE barcode = ?;",
                 (barcode,),
             ).fetchone()
-            if existing:
-                connection.execute(
-                    """
-                    UPDATE products
-                    SET name = ?, brand = ?, ingredients = ?, manufacturer_email = ?,
-                        source = ?, official_certificate_available = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?;
-                    """,
-                    (
-                        product.get("name") or "Manual product",
-                        product.get("brand") or "",
-                        product.get("ingredients") or "",
-                        product.get("manufacturer_email") or "",
-                        product.get("source") or "manual",
-                        int(bool(product.get("official_certificate_available"))),
-                        existing["id"],
-                    ),
-                )
-                connection.commit()
-                return int(existing["id"])
+        else:
+            existing = connection.execute(
+                "SELECT id FROM products WHERE manual_product_hash = ?;",
+                (manual_hash,),
+            ).fetchone()
+
+        if existing:
+            connection.execute(
+                """
+                UPDATE products
+                SET name = ?, brand = ?, ingredients = ?, manufacturer_email = ?,
+                    source = ?, official_certificate_available = ?,
+                    manual_product_hash = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?;
+                """,
+                (
+                    product.get("name") or "Manual product",
+                    product.get("brand") or "",
+                    product.get("ingredients") or "",
+                    product.get("manufacturer_email") or "",
+                    product.get("source") or "manual",
+                    int(bool(product.get("official_certificate_available"))),
+                    manual_hash,
+                    existing["id"],
+                ),
+            )
+            connection.commit()
+            return int(existing["id"])
 
         cursor = connection.execute(
             """
@@ -366,17 +387,19 @@ def save_product(product: dict[str, Any]) -> int:
                 name,
                 brand,
                 ingredients,
+                manual_product_hash,
                 manufacturer_email,
                 source,
                 official_certificate_available
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 barcode,
                 product.get("name") or "Manual product",
                 product.get("brand") or "",
                 product.get("ingredients") or "",
+                manual_hash,
                 product.get("manufacturer_email") or "",
                 product.get("source") or "manual",
                 int(bool(product.get("official_certificate_available"))),
@@ -384,7 +407,6 @@ def save_product(product: dict[str, Any]) -> int:
         )
         connection.commit()
         return int(cursor.lastrowid)
-
 
 def save_product_check(
     product_id: int,
@@ -448,6 +470,7 @@ def fetch_pending_inquiries() -> list[dict[str, Any]]:
                 mi.id,
                 mi.product_id,
                 mi.ingredient_term,
+                mi.requested_ingredients_json,
                 mi.manufacturer_email,
                 mi.email_subject,
                 mi.email_body,
@@ -473,6 +496,8 @@ def store_manufacturer_response(
     response_text: str,
     analyzed_status: str,
     analysis_notes: str,
+    confirmed_ingredients: list[str],
+    unresolved_ingredients: list[str],
     product_id: int,
     product_name: str,
     ingredients_text: str,
@@ -489,11 +514,13 @@ def store_manufacturer_response(
                 analysis_notes,
                 ingredients_text,
                 doubtful_ingredient,
+                confirmed_ingredients_json,
+                unresolved_ingredients_json,
                 verification_source,
                 response_date,
                 recheck_required
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'manufacturer_response', CURRENT_TIMESTAMP, 0);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manufacturer_response', CURRENT_TIMESTAMP, 0);
             """,
             (
                 inquiry_id,
@@ -502,6 +529,8 @@ def store_manufacturer_response(
                 analysis_notes,
                 ingredients_text,
                 doubtful_ingredient,
+                json.dumps(confirmed_ingredients),
+                json.dumps(unresolved_ingredients),
             ),
         )
         connection.execute(
@@ -525,6 +554,18 @@ def store_manufacturer_response(
                 (product_id, user_email, subject, message),
             )
         connection.commit()
+
+
+def _requested_ingredients_from_inquiry(inquiry: dict[str, Any]) -> list[str]:
+    raw_json = inquiry.get("requested_ingredients_json")
+    if raw_json:
+        try:
+            loaded = json.loads(str(raw_json))
+            if isinstance(loaded, list):
+                return [str(item) for item in loaded if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+    return [part.strip() for part in str(inquiry.get("ingredient_term") or "").split(",") if part.strip()]
 
 
 def _latest_user_email_for_product(connection: Any, product_id: int) -> str:

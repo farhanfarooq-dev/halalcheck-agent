@@ -6,6 +6,7 @@ will call these functions later, so this file does not contain any UI code.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -139,12 +140,18 @@ def _manual_product_data(
     lookup_metadata: dict[str, Any],
     source: str,
 ) -> dict[str, Any]:
+    clean_name = (product_name or "Manual product").strip()
+    clean_brand = (brand or "").strip()
+    clean_ingredients = (ingredients or "").strip()
+    manual_hash = _manual_product_hash(clean_name, clean_brand, clean_ingredients)
     return {
         "id": None,
         "barcode": barcode,
-        "name": (product_name or "Manual product").strip(),
-        "brand": (brand or "").strip(),
-        "ingredients": (ingredients or "").strip(),
+        "manual_product_hash": manual_hash,
+        "product_identity_key": barcode or manual_hash,
+        "name": clean_name,
+        "brand": clean_brand,
+        "ingredients": clean_ingredients,
         "fetched_ingredients": "",
         "quantity": "",
         "manufacturer_email": (manufacturer_email or "").strip(),
@@ -195,17 +202,14 @@ def halal_decision_agent(
             "fresh ingredient analysis",
         )
 
-    product_id = product_data.get("id")
-    reusable_confirmation = (
-        find_reusable_manufacturer_confirmation(
-            product_id=int(product_id),
+    reusable_confirmation = None
+    if not product_data.get("recheck_required"):
+        reusable_confirmation = find_reusable_manufacturer_confirmation(
+            product_data=product_data,
             ingredients_text=str(ingredient_analysis.get("ingredients_text") or ""),
             detected_concerns=detected_concerns,
             db_path=db_path,
         )
-        if product_id and not product_data.get("recheck_required")
-        else None
-    )
     if reusable_confirmation and reusable_confirmation["analyzed_status"] == FINAL_NOT_HALAL:
         return _decision(
             FINAL_NOT_HALAL,
@@ -266,8 +270,8 @@ def manufacturer_inquiry_agent(
             "message": "No manufacturer inquiry is required for this status.",
         }
 
-    doubtful_issue = _first_doubtful_issue(ingredient_analysis)
-    if not doubtful_issue:
+    doubtful_issues = _doubtful_issues(ingredient_analysis)
+    if not doubtful_issues:
         return {
             "required": False,
             "status": "not_required",
@@ -276,9 +280,9 @@ def manufacturer_inquiry_agent(
 
     product_id = _ensure_product_exists(product_data, db_path)
     reusable_confirmation = find_reusable_manufacturer_confirmation(
-        product_id=product_id,
+        product_data={**product_data, "id": product_id},
         ingredients_text=str(ingredient_analysis.get("ingredients_text") or ""),
-        detected_concerns=[doubtful_issue],
+        detected_concerns=doubtful_issues,
         db_path=db_path,
     )
     if reusable_confirmation:
@@ -286,12 +290,14 @@ def manufacturer_inquiry_agent(
             "required": False,
             "status": "stored_response_reused",
             "message": "A stored manufacturer response was reused for this ingredient list.",
+            "requested_ingredients": _ingredient_names(doubtful_issues),
             "response": reusable_confirmation,
         }
 
+    ingredient_term = _ingredient_list_label(doubtful_issues)
     existing_inquiry = _find_existing_inquiry(
         product_id,
-        doubtful_issue["ingredient"],
+        ingredient_term,
         str(ingredient_analysis.get("ingredients_text") or ""),
         db_path,
     )
@@ -305,10 +311,12 @@ def manufacturer_inquiry_agent(
             "response": existing_response,
         }
 
-    email_draft = _create_email_draft(product_data, doubtful_issue)
+    requested_ingredients = _ingredient_names(doubtful_issues)
+    email_draft = _create_email_draft(product_data, doubtful_issues)
     inquiry_id = _insert_manufacturer_inquiry(
         product_id=product_id,
-        ingredient_term=doubtful_issue["ingredient"],
+        ingredient_term=ingredient_term,
+        requested_ingredients=requested_ingredients,
         manufacturer_email=str(product_data.get("manufacturer_email") or ""),
         email_subject=email_draft["subject"],
         email_body=email_draft["body"],
@@ -319,10 +327,12 @@ def manufacturer_inquiry_agent(
         "required": True,
         "status": "draft_created",
         "message": "A manufacturer inquiry draft was created.",
+        "requested_ingredients": requested_ingredients,
         "inquiry": {
             "id": inquiry_id,
             "product_id": product_id,
-            "ingredient_term": doubtful_issue["ingredient"],
+            "ingredient_term": ingredient_term,
+            "requested_ingredients": requested_ingredients,
             "manufacturer_email": product_data.get("manufacturer_email")
             or "manufacturer email required",
             "email_subject": email_draft["subject"],
@@ -334,16 +344,22 @@ def manufacturer_inquiry_agent(
     }
 
 
-def analyze_manufacturer_response(response_text: str) -> dict[str, str]:
+def analyze_manufacturer_response(
+    response_text: str,
+    doubtful_ingredients: list[str] | None = None,
+) -> dict[str, Any]:
     """Classify a pasted manufacturer response using simple transparent rules."""
     clean_response = response_text.strip()
     normalized = clean_response.lower()
+    requested = [ingredient for ingredient in (doubtful_ingredients or []) if ingredient]
 
     if not clean_response or len(clean_response) < 20:
-        return {
-            "analyzed_status": FINAL_UNKNOWN,
-            "analysis_notes": "The response is too short or missing key source information.",
-        }
+        return _response_analysis(
+            FINAL_UNKNOWN,
+            "The response is too short or missing key source information.",
+            [],
+            requested,
+        )
 
     not_halal_terms = [
         "pork-derived",
@@ -366,7 +382,11 @@ def analyze_manufacturer_response(response_text: str) -> dict[str, str]:
         "vegetable source",
         "vegetable origin",
         "non-animal",
+        "non animal",
         "not animal-derived",
+        "non-alcohol",
+        "non alcohol",
+        "alcohol-free",
     ]
     unclear_terms = [
         "cannot confirm",
@@ -379,76 +399,135 @@ def analyze_manufacturer_response(response_text: str) -> dict[str, str]:
     ]
 
     if any(term in normalized for term in not_halal_terms):
-        return {
-            "analyzed_status": FINAL_NOT_HALAL,
-            "analysis_notes": "The response mentions an animal, pork, lard, or alcohol-derived source.",
-        }
+        return _response_analysis(
+            FINAL_NOT_HALAL,
+            "The response mentions an animal, pork, lard, or alcohol-derived source.",
+            [],
+            requested,
+        )
 
     if any(term in normalized for term in suitable_terms):
-        return {
-            "analyzed_status": STATUS_MANUFACTURER_CONFIRMED,
-            "analysis_notes": (
+        confirmed = _confirmed_ingredients_from_response(normalized, requested)
+        unresolved = [ingredient for ingredient in requested if ingredient not in confirmed]
+        if requested and unresolved:
+            return _response_analysis(
+                STATUS_STILL_DOUBTFUL,
+                "Confirmed: "
+                + ", ".join(confirmed or ["none"])
+                + ". Still unresolved: "
+                + ", ".join(unresolved)
+                + ".",
+                confirmed,
+                unresolved,
+            )
+        return _response_analysis(
+            STATUS_MANUFACTURER_CONFIRMED,
+            (
                 "The response confirms a plant-based, vegan, synthetic, microbial, "
-                "or otherwise non-animal source."
+                "non-animal, or non-alcohol source for all requested doubtful ingredients."
             ),
-        }
+            confirmed or requested,
+            [],
+        )
 
     if any(term in normalized for term in unclear_terms):
-        return {
-            "analyzed_status": STATUS_STILL_DOUBTFUL,
-            "analysis_notes": "The response is unclear and does not confirm an acceptable source.",
-        }
+        return _response_analysis(
+            STATUS_STILL_DOUBTFUL,
+            "The response is unclear and does not confirm an acceptable source.",
+            [],
+            requested,
+        )
 
-    return {
-        "analyzed_status": FINAL_UNKNOWN,
-        "analysis_notes": "The response does not contain enough source information to classify confidently.",
-    }
+    return _response_analysis(
+        FINAL_UNKNOWN,
+        "The response does not contain enough source information to classify confidently.",
+        [],
+        requested,
+    )
 
 
 def find_reusable_manufacturer_confirmation(
-    product_id: int,
+    product_data: dict[str, Any],
     ingredients_text: str,
     detected_concerns: list[dict[str, Any]],
     db_path: Path = DB_PATH,
 ) -> dict[str, Any] | None:
-    """Find a stored response for the same ingredient and same ingredient list."""
-    doubtful_terms = {
-        _normalize_text(str(issue.get("ingredient") or ""))
+    """Find a stored response for the same barcode or manual identity."""
+    requested_terms = {
+        _normalize_ingredient_key(str(issue.get("ingredient") or ""))
         for issue in detected_concerns
         if issue.get("status") == STATUS_DOUBTFUL
     }
-    if not doubtful_terms:
+    requested_terms.discard("")
+    if not requested_terms:
         return None
 
+    initialize_database(db_path)
     normalized_ingredients = _normalize_text(ingredients_text)
+    product_id = product_data.get("id")
+    barcode = str(product_data.get("barcode") or "").strip()
+    manual_hash = str(product_data.get("manual_product_hash") or "").strip()
+    if not barcode and not manual_hash:
+        manual_hash = _manual_product_hash(
+            str(product_data.get("name") or "Manual product"),
+            str(product_data.get("brand") or ""),
+            ingredients_text,
+        )
+
     with closing(get_connection(db_path)) as connection:
         rows = connection.execute(
             """
             SELECT
                 mr.*,
                 mi.ingredient_term,
-                mi.product_id
+                mi.requested_ingredients_json,
+                mi.product_id,
+                p.id AS stored_product_id,
+                p.barcode,
+                p.manual_product_hash
             FROM manufacturer_responses mr
             JOIN manufacturer_inquiries mi ON mi.id = mr.inquiry_id
-            WHERE mi.product_id = ?
-              AND mr.analyzed_status IN (?, ?)
+            JOIN products p ON p.id = mi.product_id
+            WHERE mr.analyzed_status IN (?, ?)
               AND COALESCE(mr.recheck_required, 0) = 0
             ORDER BY COALESCE(mr.response_date, mr.created_at) DESC;
             """,
-            (product_id, STATUS_MANUFACTURER_CONFIRMED, FINAL_NOT_HALAL),
+            (STATUS_MANUFACTURER_CONFIRMED, FINAL_NOT_HALAL),
         ).fetchall()
 
     for row in rows:
-        response_ingredient = _normalize_text(
-            str(row["doubtful_ingredient"] or row["ingredient_term"] or "")
+        row_barcode = str(row["barcode"] or "").strip()
+        row_hash = str(row["manual_product_hash"] or "").strip()
+        same_identity = (
+            bool(product_id and int(row["stored_product_id"]) == int(product_id))
+            or bool(barcode and row_barcode == barcode)
+            or bool(not barcode and manual_hash and row_hash == manual_hash)
         )
+        if not same_identity:
+            continue
+
         response_ingredients_text = _normalize_text(str(row["ingredients_text"] or ""))
-        if (
-            response_ingredient in doubtful_terms
-            and response_ingredients_text
-            and response_ingredients_text == normalized_ingredients
+        if not response_ingredients_text or response_ingredients_text != normalized_ingredients:
+            continue
+
+        row_data = dict(row)
+        if row["analyzed_status"] == FINAL_NOT_HALAL:
+            return row_data
+
+        confirmed_terms = _stored_ingredient_key_set(
+            row_data.get("confirmed_ingredients_json"),
+            row_data.get("doubtful_ingredient") or row_data.get("ingredient_term"),
+        )
+        unresolved_terms = _stored_ingredient_key_set(
+            row_data.get("unresolved_ingredients_json"),
+            None,
+        )
+        if requested_terms.issubset(confirmed_terms) and not requested_terms.intersection(
+            unresolved_terms
         ):
-            return dict(row)
+            row_data["result_source"] = "stored manufacturer confirmation"
+            row_data["recheck_required"] = False
+            return row_data
     return None
 
 
@@ -813,15 +892,20 @@ def _merge_product_data(
     source: str,
     lookup_status: str,
 ) -> dict[str, Any]:
+    clean_name = looked_up_product.get("name") or looked_up_product.get("product_name") or product_name or "Unknown product"
+    clean_brand = looked_up_product.get("brand") or looked_up_product.get("brands") or brand or ""
+    clean_ingredients = looked_up_product.get("ingredients") or looked_up_product.get("ingredients_text") or ingredients or ""
+    manual_hash = _manual_product_hash(clean_name, clean_brand, clean_ingredients)
     return {
         "id": None,
         "barcode": barcode,
-        "name": looked_up_product.get("name") or looked_up_product.get("product_name") or product_name or "Unknown product",
-        "brand": looked_up_product.get("brand") or looked_up_product.get("brands") or brand or "",
-        "ingredients": looked_up_product.get("ingredients") or looked_up_product.get("ingredients_text") or ingredients or "",
+        "manual_product_hash": manual_hash,
+        "product_identity_key": barcode or manual_hash,
+        "name": clean_name,
+        "brand": clean_brand,
+        "ingredients": clean_ingredients,
         "fetched_ingredients": looked_up_product.get("fetched_ingredients")
-        or looked_up_product.get("ingredients")
-        or looked_up_product.get("ingredients_text")
+        or clean_ingredients
         or "",
         "quantity": looked_up_product.get("quantity") or "",
         "manufacturer_email": manufacturer_email or looked_up_product.get("manufacturer_email") or "",
@@ -856,11 +940,20 @@ def _confirmation_is_acceptable(confirmation: dict[str, Any] | None) -> bool:
     }
 
 
-def _first_doubtful_issue(ingredient_analysis: dict[str, Any]) -> dict[str, str] | None:
-    for issue in ingredient_analysis.get("detected_concerns", []):
-        if issue.get("status") == STATUS_DOUBTFUL:
-            return issue
-    return None
+def _doubtful_issues(ingredient_analysis: dict[str, Any]) -> list[dict[str, str]]:
+    return [
+        issue
+        for issue in ingredient_analysis.get("detected_concerns", [])
+        if issue.get("status") == STATUS_DOUBTFUL
+    ]
+
+
+def _ingredient_names(issues: list[dict[str, Any]]) -> list[str]:
+    return [str(issue.get("ingredient") or "").strip() for issue in issues if issue.get("ingredient")]
+
+
+def _ingredient_list_label(issues: list[dict[str, Any]]) -> str:
+    return ", ".join(_ingredient_names(issues))
 
 
 def _ensure_product_exists(product_data: dict[str, Any], db_path: Path) -> int:
@@ -871,10 +964,21 @@ def _ensure_product_exists(product_data: dict[str, Any], db_path: Path) -> int:
 
     with closing(get_connection(db_path)) as connection:
         barcode = product_data.get("barcode")
+        manual_hash = _product_manual_hash(product_data)
+        product_data["manual_product_hash"] = manual_hash
+        product_data["product_identity_key"] = barcode or manual_hash
         if barcode:
             existing = connection.execute(
                 "SELECT id FROM products WHERE barcode = ?;",
                 (barcode,),
+            ).fetchone()
+            if existing:
+                product_data["id"] = int(existing["id"])
+                return int(existing["id"])
+        else:
+            existing = connection.execute(
+                "SELECT id FROM products WHERE manual_product_hash = ?;",
+                (manual_hash,),
             ).fetchone()
             if existing:
                 product_data["id"] = int(existing["id"])
@@ -887,17 +991,19 @@ def _ensure_product_exists(product_data: dict[str, Any], db_path: Path) -> int:
                 name,
                 brand,
                 ingredients,
+                manual_product_hash,
                 manufacturer_email,
                 source,
                 official_certificate_available
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 barcode,
                 product_data.get("name") or "Manual product",
                 product_data.get("brand") or "",
                 product_data.get("ingredients") or "",
+                manual_hash,
                 product_data.get("manufacturer_email") or "",
                 product_data.get("source") or "manual",
                 int(bool(product_data.get("official_certificate_available"))),
@@ -956,14 +1062,15 @@ def _find_response_for_inquiry(
 
 def _create_email_draft(
     product_data: dict[str, Any],
-    doubtful_issue: dict[str, str],
+    doubtful_issues: list[dict[str, str]],
 ) -> dict[str, str]:
-    return email_service.generate_manufacturer_email_draft(product_data, doubtful_issue)
+    return email_service.generate_manufacturer_email_draft(product_data, doubtful_issues)
 
 
 def _insert_manufacturer_inquiry(
     product_id: int,
     ingredient_term: str,
+    requested_ingredients: list[str],
     manufacturer_email: str,
     email_subject: str,
     email_body: str,
@@ -975,16 +1082,18 @@ def _insert_manufacturer_inquiry(
             INSERT INTO manufacturer_inquiries (
                 product_id,
                 ingredient_term,
+                requested_ingredients_json,
                 manufacturer_email,
                 email_subject,
                 email_body,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, 'draft');
+            VALUES (?, ?, ?, ?, ?, ?, 'draft');
             """,
             (
                 product_id,
                 ingredient_term,
+                json.dumps(requested_ingredients),
                 manufacturer_email,
                 email_subject,
                 email_body,
@@ -1006,10 +1115,104 @@ def _normalize_text(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+def _manual_product_hash(product_name: str, brand: str, ingredients: str) -> str:
+    identity = "|".join(
+        [
+            _normalize_text(product_name),
+            _normalize_text(brand),
+            _normalize_text(ingredients),
+        ]
+    )
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def _product_manual_hash(product_data: dict[str, Any]) -> str:
+    existing_hash = str(product_data.get("manual_product_hash") or "").strip()
+    if existing_hash:
+        return existing_hash
+    return _manual_product_hash(
+        str(product_data.get("name") or "Manual product"),
+        str(product_data.get("brand") or ""),
+        str(product_data.get("ingredients") or ""),
+    )
+
+
+def _normalize_ingredient_key(ingredient: str) -> str:
+    normalized = _normalize_text(ingredient)
+    if normalized in {"flavouring", "flavoring", "flavourings", "flavorings", "aroma", "aromen"}:
+        return "aroma/flavouring"
+    return normalized
+
+
+def _ingredient_aliases(ingredient: str) -> set[str]:
+    key = _normalize_ingredient_key(ingredient)
+    if key == "aroma/flavouring":
+        return {"aroma", "aromen", "flavouring", "flavourings", "flavoring", "flavorings"}
+    return {key}
+
+
+def _confirmed_ingredients_from_response(
+    normalized_response: str,
+    requested: list[str],
+) -> list[str]:
+    if not requested:
+        return []
+    global_confirmation_terms = (
+        "all requested",
+        "all listed",
+        "all of the following",
+        "the following ingredients",
+        "both ingredients",
+        "all ingredients",
+    )
+    if any(term in normalized_response for term in global_confirmation_terms):
+        return requested.copy()
+    if len(requested) == 1:
+        return requested.copy()
+    confirmed = []
+    for ingredient in requested:
+        if any(alias in normalized_response for alias in _ingredient_aliases(ingredient)):
+            confirmed.append(ingredient)
+    return confirmed
+
+
+def _response_analysis(
+    status: str,
+    notes: str,
+    confirmed: list[str],
+    unresolved: list[str],
+) -> dict[str, Any]:
+    return {
+        "analyzed_status": status,
+        "analysis_notes": notes,
+        "confirmed_ingredients": confirmed,
+        "unresolved_ingredients": unresolved,
+    }
+
+
+def _stored_ingredient_key_set(
+    json_value: Any,
+    fallback: Any,
+) -> set[str]:
+    ingredients: list[str] = []
+    if json_value:
+        try:
+            loaded = json.loads(str(json_value))
+            if isinstance(loaded, list):
+                ingredients.extend(str(item) for item in loaded)
+        except json.JSONDecodeError:
+            ingredients.append(str(json_value))
+    if not ingredients and fallback:
+        ingredients.extend(part.strip() for part in str(fallback).split(","))
+    return {_normalize_ingredient_key(ingredient) for ingredient in ingredients if ingredient}
+
+
 def _row_to_product(row: sqlite3.Row) -> dict[str, Any]:
     return {
         "id": row["id"],
         "barcode": row["barcode"],
+        "manual_product_hash": row["manual_product_hash"] or "",
+        "product_identity_key": row["barcode"] or row["manual_product_hash"] or "",
         "name": row["name"],
         "brand": row["brand"] or "",
         "ingredients": row["ingredients"] or "",

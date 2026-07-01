@@ -1,4 +1,4 @@
-﻿# Reflection
+# Reflection
 
 AI HalalCheck Agent demonstrates a practical AI agent workflow while keeping
 the final halal decision grounded in explicit rules and verifiable evidence.
@@ -55,7 +55,7 @@ storage rather than a production database.
 
 ## Metrics
 
-- 34 automated tests passed.
+- 39 automated tests passed.
 - 4 FastAPI endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and

@@ -1,4 +1,4 @@
-﻿# AI HalalCheck Agent
+# AI HalalCheck Agent
 
 AI HalalCheck Agent is a bootcamp MVP for checking whether food products are
 halal-suitable. It combines a Streamlit user interface, a lightweight FastAPI
@@ -10,7 +10,7 @@ certification.
 
 ## Metrics
 
-- 34 automated tests passed.
+- 39 automated tests passed.
 - 4 FastAPI endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and
@@ -177,7 +177,7 @@ py -m pytest
 Expected submission result:
 
 ```text
-34 passed
+39 passed
 ```
 
 ## Run With Docker
