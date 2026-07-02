@@ -77,6 +77,7 @@ LLM_PROVIDER=local
 EMAIL_MODE=draft
 DATABASE_PATH=data/halalcheck.db
 GMAIL_SENDER_EMAIL=halalcheckde@gmail.com
+APP_ACCESS_PASSWORD=
 ```
 
 `EMAIL_MODE=draft` is the default. In this MVP, no real emails are sent. The
@@ -92,6 +93,10 @@ Optional Gmail sending uses human approval. Keep `EMAIL_MODE=draft` for demos.
 To test real Gmail sending locally, set `EMAIL_MODE=approval`,
 `GMAIL_SENDER_EMAIL`, `GMAIL_CREDENTIALS_PATH`, and `GMAIL_TOKEN_PATH` in your
 local `.env`. Never commit Gmail credentials or token files.
+
+Optional public access protection is controlled by `APP_ACCESS_PASSWORD`. Leave
+it empty for normal local development. Set it only in local `.env` or hosting
+platform secrets when you want a simple password gate.
 
 ## Run Locally With Python
 
@@ -186,6 +191,39 @@ curl -X POST http://127.0.0.1:8000/manufacturer-response ^
   -d "{\"inquiry_id\":1,\"response_text\":\"The E471 used in this product is plant-based.\"}"
 ```
 
+
+
+## Streamlit Community Cloud Family Test
+
+Use this path when you want a quick public URL for immediate family testing.
+
+1. Push the project to a private or public GitHub repository.
+2. Go to Streamlit Community Cloud and connect the GitHub repository.
+3. Select `app.py` as the Streamlit app entry file.
+4. Add secrets in Streamlit Cloud's app settings. Do not put secrets in GitHub.
+5. Recommended family-test secrets:
+
+```toml
+APP_ACCESS_PASSWORD="choose-a-private-family-password"
+LLM_PROVIDER="local"
+EMAIL_MODE="draft"
+OPENFOODFACTS_BASE_URL="https://world.openfoodfacts.org"
+```
+
+For public family testing, keep Gmail sending disabled and keep OpenAI disabled
+unless you intentionally want public users to consume API credits.
+
+Security notes:
+
+- Never commit `.env` or real secret values.
+- Never paste real passwords, OpenAI keys, Gmail credentials, or Gmail tokens
+  into README files, screenshots, commits, or issue comments.
+- Public users may consume OpenAI credits if `LLM_PROVIDER=openai` and an
+  OpenAI key are enabled on the deployed app.
+- Gmail sending should stay `EMAIL_MODE=draft` or otherwise disabled for public
+  family testing.
+- The access password is a simple sharing gate, not a full authentication
+  system.
 
 ## Gmail Manufacturer Inquiry Workflow
 

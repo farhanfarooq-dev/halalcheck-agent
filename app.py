@@ -8,6 +8,7 @@ from typing import Any
 
 import streamlit as st
 
+import config
 from agents import (
     FINAL_DOUBTFUL,
     analyze_manufacturer_response,
@@ -33,6 +34,7 @@ st.set_page_config(page_title="AI HalalCheck Agent", page_icon="AH", layout="wid
 
 def main() -> None:
     """Run the Streamlit application."""
+    require_access_password()
     initialize_database(DB_PATH)
 
     st.title("AI HalalCheck Agent")
@@ -52,6 +54,23 @@ def main() -> None:
     else:
         show_admin_response_review_page()
 
+
+
+def require_access_password() -> None:
+    """Stop the app unless the optional access password has been entered."""
+    access_password = config.APP_ACCESS_PASSWORD.strip()
+    if not access_password:
+        return
+    if st.session_state.get("access_granted") is True:
+        return
+
+    entered_password = st.text_input("Access password", type="password")
+    if entered_password == access_password:
+        st.session_state["access_granted"] = True
+        return
+
+    st.warning("Please enter the correct access password.")
+    st.stop()
 
 def show_product_check_page() -> None:
     """Collect product details, run agents, and display the result."""

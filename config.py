@@ -21,6 +21,7 @@ load_dotenv(BASE_DIR / ".env")
 DATABASE_PATH = os.getenv("DATABASE_PATH", "data/halalcheck.db")
 APP_NAME = os.getenv("APP_NAME", "AI-HalalCheck-Agent")
 APP_VERSION = os.getenv("APP_VERSION", "1.0")
+APP_ACCESS_PASSWORD = os.getenv("APP_ACCESS_PASSWORD", "")
 
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "local")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
