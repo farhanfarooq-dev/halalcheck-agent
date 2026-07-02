@@ -140,6 +140,12 @@ def check_product(request: ProductCheckRequest) -> ProductCheckResponse:
         analysis,
         language=language,
     )
+    if inquiry.get("inquiry") and (request.user_email or "").strip():
+        _update_inquiry_user_email(
+            int(inquiry["inquiry"]["id"]),
+            str(request.user_email).strip(),
+            DB_PATH,
+        )
 
     _save_product_check(
         product_id=product_id,
@@ -365,6 +371,15 @@ def _save_product_check(
         connection.commit()
 
 
+
+def _update_inquiry_user_email(inquiry_id: int, user_email: str, db_path: Path) -> None:
+    with closing(get_connection(db_path)) as connection:
+        connection.execute(
+            "UPDATE manufacturer_inquiries SET user_email = ? WHERE id = ?;",
+            (user_email, inquiry_id),
+        )
+        connection.commit()
+
 def _find_product_by_barcode(barcode: str, db_path: Path) -> dict[str, Any] | None:
     with closing(get_connection(db_path)) as connection:
         row = connection.execute(
@@ -456,17 +471,19 @@ def _find_or_create_inquiry_for_response(
                 ingredient_term,
                 requested_ingredients_json,
                 manufacturer_email,
+                system_sender_email,
                 email_subject,
                 email_body,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'draft');
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'draft');
             """,
             (
                 product_id,
                 ingredient,
                 json.dumps(requested_ingredients),
                 product["manufacturer_email"],
+                config.GMAIL_SENDER_EMAIL.strip(),
                 draft["subject"],
                 draft["body"],
             ),
@@ -489,6 +506,8 @@ def _fetch_inquiry(inquiry_id: int, db_path: Path) -> dict[str, Any] | None:
                 mi.ingredient_term,
                 mi.requested_ingredients_json,
                 mi.manufacturer_email,
+                mi.system_sender_email,
+                mi.user_email,
                 mi.verified_manufacturer_email,
                 mi.email_status,
                 mi.gmail_message_id,
@@ -523,6 +542,8 @@ def _find_matching_inquiry(
                 mi.ingredient_term,
                 mi.requested_ingredients_json,
                 mi.manufacturer_email,
+                mi.system_sender_email,
+                mi.user_email,
                 mi.email_subject,
                 mi.email_body,
                 mi.status,
@@ -590,11 +611,14 @@ def _store_manufacturer_response(
                 doubtful_ingredient,
                 confirmed_ingredients_json,
                 unresolved_ingredients_json,
+                system_sender_email,
+                manufacturer_email,
+                user_email,
                 verification_source,
                 response_date,
                 recheck_required
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manufacturer_response', CURRENT_TIMESTAMP, 0);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manufacturer_response', CURRENT_TIMESTAMP, 0);
             """,
             (
                 int(inquiry["id"]),
@@ -605,6 +629,9 @@ def _store_manufacturer_response(
                 doubtful_ingredient,
                 json.dumps(confirmed_ingredients),
                 json.dumps(unresolved_ingredients),
+                config.GMAIL_SENDER_EMAIL.strip(),
+                str(inquiry.get("manufacturer_email") or ""),
+                str(inquiry.get("user_email") or ""),
             ),
         )
         connection.execute(

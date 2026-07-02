@@ -10,7 +10,7 @@ certification.
 
 ## Metrics
 
-- 46 automated tests passed.
+- 48 automated tests passed.
 - 6 FastAPI endpoints: 4 core endpoints and 2 optional Gmail workflow endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and
@@ -90,9 +90,14 @@ placed into the editable Ingredients field; the halal check still analyzes only
 the final ingredient text, not the image directly.
 
 Optional Gmail sending uses human approval. Keep `EMAIL_MODE=draft` for demos.
-To test real Gmail sending locally, set `EMAIL_MODE=approval`,
-`GMAIL_SENDER_EMAIL`, `GMAIL_CREDENTIALS_PATH`, and `GMAIL_TOKEN_PATH` in your
-local `.env`. Never commit Gmail credentials or token files.
+`GMAIL_SENDER_EMAIL` is the central system sender and reply inbox.
+`manufacturer_email` is the company address that receives the inquiry.
+`user_email` is only used later for an optional notification draft after a
+manufacturer response is received; it is never used as the sender for
+manufacturer inquiries. To test real Gmail sending locally, set
+`EMAIL_MODE=approval`, `GMAIL_SENDER_EMAIL`, `GMAIL_CREDENTIALS_PATH`, and
+`GMAIL_TOKEN_PATH` in your local `.env`. Never commit Gmail credentials or token
+files.
 
 Optional public access protection is controlled by `APP_ACCESS_PASSWORD`. Leave
 it empty for normal local development. Set it only in local `.env` or hosting
@@ -227,7 +232,10 @@ Security notes:
 
 ## Gmail Manufacturer Inquiry Workflow
 
-The Gmail workflow is optional and human-in-the-loop.
+The Gmail workflow is optional and human-in-the-loop. Manufacturer inquiries
+are sent from the central system email account, for example
+`halalcheckde@gmail.com`. Manufacturer replies are synced from that same system
+inbox and update the central SQLite database.
 
 Draft mode test:
 
@@ -236,9 +244,10 @@ EMAIL_MODE=draft
 py -m streamlit run app.py
 ```
 
-Then check a product with doubtful ingredients. The app shows the manufacturer
-inquiry draft, possible email candidates, and the confirmed recipient field. No
-Gmail email is sent in draft mode.
+Then check a product with doubtful ingredients. The app shows From as the
+system email, To as the manufacturer email, Reply inbox as the system email,
+possible email candidates, and the confirmed recipient field. No Gmail email is
+sent in draft mode.
 
 Approved send test:
 
@@ -256,8 +265,9 @@ returns them. Local credential and token files must stay out of Git.
 Reply sync test:
 
 In Admin Response Review, click `Sync manufacturer replies from Gmail`. The sync
-matches replies by Gmail thread when available and stores the manufacturer
-response without deleting Gmail messages. For bootcamp/demo testing, the pytest
+matches replies by Gmail thread, inquiry reference id, subject, product name,
+or barcode when available, then stores the manufacturer response in the central
+database without deleting Gmail messages. For bootcamp/demo testing, the pytest
 suite uses mocked Gmail replies so no real email is sent.
 
 ## Public Testing / Deployment Notes
@@ -281,7 +291,7 @@ py -m pytest
 Expected submission result:
 
 ```text
-46 passed
+48 passed
 ```
 
 ## Run With Docker

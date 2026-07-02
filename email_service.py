@@ -61,7 +61,7 @@ def generate_manufacturer_email_draft(
         "subject": f"Question about ingredient source in {product_label}",
         "body": body,
         "sender": _formatted_sender(),
-        "reply_to": config.REPLY_TO_EMAIL.strip(),
+        "reply_to": config.GMAIL_SENDER_EMAIL.strip(),
     }
 
 
@@ -136,7 +136,7 @@ def _signature() -> str:
 
 
 def _formatted_sender() -> str:
-    from_email = config.FROM_EMAIL.strip()
+    from_email = config.GMAIL_SENDER_EMAIL.strip()
     sender_name = config.SENDER_DISPLAY_NAME.strip()
     if from_email and sender_name:
         return formataddr((sender_name, from_email))

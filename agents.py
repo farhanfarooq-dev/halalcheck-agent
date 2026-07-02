@@ -337,6 +337,7 @@ def manufacturer_inquiry_agent(
             "requested_ingredients": requested_ingredients,
             "manufacturer_email": product_data.get("manufacturer_email")
             or "manufacturer email required",
+            "system_sender_email": config.GMAIL_SENDER_EMAIL.strip(),
             "email_subject": email_draft["subject"],
             "email_body": email_draft["body"],
             "sender": email_draft.get("sender", ""),
@@ -1102,17 +1103,19 @@ def _insert_manufacturer_inquiry(
                 ingredient_term,
                 requested_ingredients_json,
                 manufacturer_email,
+                system_sender_email,
                 email_subject,
                 email_body,
                 status
             )
-            VALUES (?, ?, ?, ?, ?, ?, 'draft');
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'draft');
             """,
             (
                 product_id,
                 ingredient_term,
                 json.dumps(requested_ingredients),
                 manufacturer_email,
+                config.GMAIL_SENDER_EMAIL.strip(),
                 email_subject,
                 email_body,
             ),

@@ -64,7 +64,7 @@ The backend reuses the same workflow as Streamlit: barcode lookup, manual
 fallback, ingredient analysis, explanation generation, inquiry draft creation,
 response analysis, and stored confirmation reuse.
 
-For project completeness, the repo includes 46 passing automated tests, Docker
+For project completeness, the repo includes 48 passing automated tests, Docker
 support, Docker Compose support, `.env.example`, and documentation for local
 Python, Streamlit, FastAPI, tests, and container runs.
 

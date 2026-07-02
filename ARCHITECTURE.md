@@ -111,6 +111,17 @@ reused only when the product barcode, doubtful ingredient, and ingredient list
 still match. If ingredients change, the app asks for a new review instead of
 silently trusting old evidence.
 
+## Email Roles
+
+- System email: `GMAIL_SENDER_EMAIL`, for example `halalcheckde@gmail.com`, is
+  the sender and reply inbox for manufacturer inquiries.
+- Manufacturer email: `manufacturer_email` is the company recipient for the
+  inquiry.
+- User email: `user_email` is only used to create a notification draft after a
+  manufacturer response is received. It is never used as the sender.
+- Gmail reply sync reads replies from the system inbox and stores manufacturer
+  responses in SQLite so stored confirmation reuse works for future checks.
+
 ## Safety Rules
 
 The system must never mark a product as `Halal Certified` unless an official
@@ -148,7 +159,7 @@ docker compose up --build
 
 ## Metrics
 
-- 46 automated tests passed.
+- 48 automated tests passed.
 - 6 FastAPI endpoints: 4 core endpoints and 2 optional Gmail workflow endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and

@@ -83,7 +83,7 @@ def approve_and_send_inquiry(
     subject: str,
     body: str,
     db_path: Path = DB_PATH,
-    gmail_sender: Callable[[str, str, str], dict[str, str]] | None = None,
+    gmail_sender: Callable[[str, str, str, str], dict[str, str]] | None = None,
 ) -> dict[str, str]:
     """Send one reviewed inquiry only after an explicit human action."""
     initialize_database(db_path)
@@ -95,9 +95,10 @@ def approve_and_send_inquiry(
     if not gmail_sending_allowed() and gmail_sender is None:
         return {"status": "not_configured", "message": "Gmail is not configured for sending."}
 
+    system_sender_email = config.GMAIL_SENDER_EMAIL.strip()
     sender = gmail_sender or _send_with_gmail_api
     try:
-        send_result = sender(recipient_email, subject, body)
+        send_result = sender(system_sender_email, recipient_email, subject, body)
     except Exception as exc:
         _mark_inquiry_send_error(inquiry_id, str(exc), db_path)
         return {"status": "error", "message": f"Gmail send failed: {exc}"}
@@ -108,12 +109,20 @@ def approve_and_send_inquiry(
         connection.execute(
             """
             UPDATE manufacturer_inquiries
-            SET manufacturer_email = ?, verified_manufacturer_email = ?,
-                email_status = 'sent', gmail_message_id = ?, gmail_thread_id = ?,
+            SET manufacturer_email = ?, system_sender_email = ?,
+                verified_manufacturer_email = ?, email_status = 'sent',
+                gmail_message_id = ?, gmail_thread_id = ?,
                 sent_at = CURRENT_TIMESTAMP, send_error = ''
             WHERE id = ?;
             """,
-            (recipient_email, recipient_email, gmail_message_id, gmail_thread_id, inquiry_id),
+            (
+                recipient_email,
+                system_sender_email,
+                recipient_email,
+                gmail_message_id,
+                gmail_thread_id,
+                inquiry_id,
+            ),
         )
         _store_verified_contact(connection, recipient_email, inquiry_id)
         connection.commit()
@@ -123,6 +132,8 @@ def approve_and_send_inquiry(
         "message": "Manufacturer inquiry sent after approval.",
         "gmail_message_id": gmail_message_id,
         "gmail_thread_id": gmail_thread_id,
+        "system_sender_email": system_sender_email,
+        "recipient_email": recipient_email,
     }
 
 
@@ -138,6 +149,8 @@ def sync_manufacturer_replies(
     for inquiry in sent_inquiries:
         replies = reply_fetcher(inquiry) if reply_fetcher else _fetch_gmail_replies(inquiry)
         for reply in replies:
+            if not _reply_matches_inquiry(reply, inquiry):
+                continue
             response_text = str(reply.get("body") or reply.get("response_text") or "").strip()
             if not response_text:
                 continue
@@ -150,7 +163,7 @@ def sync_manufacturer_replies(
                 analysis_notes=analysis["analysis_notes"],
                 confirmed_ingredients=analysis.get("confirmed_ingredients", []),
                 unresolved_ingredients=analysis.get("unresolved_ingredients", []),
-                source=str(reply.get("source") or "gmail"),
+                source="manufacturer_response",
                 db_path=db_path,
             )
             stored_replies.append(
@@ -167,14 +180,18 @@ def sync_manufacturer_replies(
     return {"status": "ok", "matched_replies": stored_replies, "count": len(stored_replies)}
 
 
-def _send_with_gmail_api(to_email: str, subject: str, body: str) -> dict[str, str]:
-    service = _build_gmail_service()
+def _send_with_gmail_api(
+    system_sender_email: str,
+    to_email: str,
+    subject: str,
+    body: str,
+) -> dict[str, str]:
+    service = _build_gmail_service(validate_sender=True)
     message = EmailMessage()
     message["To"] = to_email
-    message["From"] = config.GMAIL_SENDER_EMAIL.strip()
+    message["From"] = system_sender_email
     message["Subject"] = subject
-    if config.REPLY_TO_EMAIL.strip():
-        message["Reply-To"] = config.REPLY_TO_EMAIL.strip()
+    message["Reply-To"] = system_sender_email
     message.set_content(body)
     raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
     result = service.users().messages().send(userId="me", body={"raw": raw}).execute()
@@ -197,11 +214,11 @@ def _fetch_gmail_replies(inquiry: dict[str, Any]) -> list[dict[str, str]]:
     for message in messages:
         body = _extract_gmail_plain_text(message.get("payload", {}))
         if body:
-            replies.append({"source": "gmail", "body": body})
+            replies.append({"source": "gmail", "body": body, "gmail_thread_id": thread_id})
     return replies
 
 
-def _build_gmail_service() -> Any:
+def _build_gmail_service(validate_sender: bool = False) -> Any:
     try:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
@@ -228,7 +245,16 @@ def _build_gmail_service() -> Any:
             credentials = flow.run_local_server(port=0)
         token_path.parent.mkdir(parents=True, exist_ok=True)
         token_path.write_text(credentials.to_json(), encoding="utf-8")
-    return build("gmail", "v1", credentials=credentials)
+    service = build("gmail", "v1", credentials=credentials)
+    if validate_sender:
+        profile = service.users().getProfile(userId="me").execute()
+        account_email = str(profile.get("emailAddress") or "").lower()
+        expected_email = config.GMAIL_SENDER_EMAIL.strip().lower()
+        if account_email and account_email != expected_email:
+            raise RuntimeError(
+                "Configured Gmail token account does not match GMAIL_SENDER_EMAIL."
+            )
+    return service
 
 
 def _fetch_sent_inquiries(db_path: Path) -> list[dict[str, Any]]:
@@ -251,6 +277,32 @@ def _fetch_sent_inquiries(db_path: Path) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+
+def _reply_matches_inquiry(reply: dict[str, str], inquiry: dict[str, Any]) -> bool:
+    """Match replies from the central system inbox to a sent inquiry."""
+    thread_id = str(inquiry.get("gmail_thread_id") or "").strip()
+    if thread_id and str(reply.get("gmail_thread_id") or reply.get("thread_id") or "").strip() == thread_id:
+        return True
+
+    haystack = " ".join(
+        [
+            str(reply.get("subject") or ""),
+            str(reply.get("body") or reply.get("response_text") or ""),
+        ]
+    ).lower()
+    inquiry_id = str(inquiry.get("id") or "")
+    if inquiry_id and f"hc-{inquiry_id}" in haystack:
+        return True
+
+    subject = str(inquiry.get("email_subject") or "").lower()
+    product_name = str(inquiry.get("product_name") or "").lower()
+    barcode = str(inquiry.get("barcode") or "").lower()
+    return bool(
+        (subject and subject in haystack)
+        or (product_name and product_name in haystack)
+        or (barcode and barcode in haystack)
+    )
+
 def _store_manufacturer_response_from_reply(
     inquiry: dict[str, Any],
     response_text: str,
@@ -267,10 +319,11 @@ def _store_manufacturer_response_from_reply(
             INSERT INTO manufacturer_responses (
                 inquiry_id, response_text, analyzed_status, analysis_notes,
                 ingredients_text, doubtful_ingredient, confirmed_ingredients_json,
-                unresolved_ingredients_json, verification_source, response_date,
+                unresolved_ingredients_json, system_sender_email, manufacturer_email,
+                user_email, verification_source, response_date,
                 recheck_required
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0);
             """,
             (
                 int(inquiry["id"]),
@@ -281,6 +334,9 @@ def _store_manufacturer_response_from_reply(
                 str(inquiry.get("ingredient_term") or ""),
                 json.dumps(confirmed_ingredients),
                 json.dumps(unresolved_ingredients),
+                str(inquiry.get("system_sender_email") or config.GMAIL_SENDER_EMAIL.strip()),
+                str(inquiry.get("manufacturer_email") or ""),
+                str(inquiry.get("user_email") or ""),
                 source,
             ),
         )

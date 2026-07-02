@@ -102,7 +102,7 @@ def show_product_check_page() -> None:
         brand = st.text_input("Brand")
         ingredients = st.text_area("Ingredients", height=140, key="ingredients_text")
         manufacturer_email = st.text_input("Manufacturer email")
-        user_email = st.text_input("User/customer email (optional)")
+        user_email = st.text_input("User email for notification (optional)")
         language_label = st.selectbox("Language", ["English", "German"])
         official_certificate_available = st.checkbox(
             "Official halal certificate is available"
@@ -137,6 +137,8 @@ def show_product_check_page() -> None:
         analysis,
         language=language_code,
     )
+    if inquiry.get("inquiry") and user_email.strip():
+        update_inquiry_user_email(int(inquiry["inquiry"]["id"]), user_email.strip())
 
     save_product_check(
         product_id=product_id,
@@ -225,8 +227,17 @@ def display_product_result(
         st.subheader("Manufacturer inquiry draft")
         st.info(inquiry["message"])
         inquiry_data = inquiry.get("inquiry", {})
+        st.info(
+            "Manufacturer inquiries are sent from the system email address. "
+            "User email is only used for optional notification when a manufacturer response is received."
+        )
         st.text_input(
-            "Draft recipient",
+            "From",
+            value=config.GMAIL_SENDER_EMAIL.strip(),
+            disabled=True,
+        )
+        st.text_input(
+            "To",
             value=str(
                 inquiry_data.get("manufacturer_email")
                 or "manufacturer email required"
@@ -234,13 +245,8 @@ def display_product_result(
             disabled=True,
         )
         st.text_input(
-            "Draft sender",
-            value=str(inquiry_data.get("sender") or ""),
-            disabled=True,
-        )
-        st.text_input(
-            "Reply-To",
-            value=str(inquiry_data.get("reply_to") or ""),
+            "Reply inbox",
+            value=config.GMAIL_SENDER_EMAIL.strip(),
             disabled=True,
         )
         requested_ingredients = inquiry_data.get("requested_ingredients") or inquiry.get("requested_ingredients") or []
@@ -562,6 +568,8 @@ def fetch_pending_inquiries() -> list[dict[str, Any]]:
                 mi.ingredient_term,
                 mi.requested_ingredients_json,
                 mi.manufacturer_email,
+                mi.system_sender_email,
+                mi.user_email,
                 mi.email_subject,
                 mi.email_body,
                 mi.status,
@@ -606,11 +614,14 @@ def store_manufacturer_response(
                 doubtful_ingredient,
                 confirmed_ingredients_json,
                 unresolved_ingredients_json,
+                system_sender_email,
+                manufacturer_email,
+                user_email,
                 verification_source,
                 response_date,
                 recheck_required
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manufacturer_response', CURRENT_TIMESTAMP, 0);
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manufacturer_response', CURRENT_TIMESTAMP, 0);
             """,
             (
                 inquiry_id,
@@ -621,6 +632,9 @@ def store_manufacturer_response(
                 doubtful_ingredient,
                 json.dumps(confirmed_ingredients),
                 json.dumps(unresolved_ingredients),
+                config.GMAIL_SENDER_EMAIL.strip(),
+                _manufacturer_email_for_inquiry(connection, inquiry_id),
+                _latest_user_email_for_product(connection, product_id),
             ),
         )
         connection.execute(
@@ -645,6 +659,24 @@ def store_manufacturer_response(
             )
         connection.commit()
 
+
+
+def update_inquiry_user_email(inquiry_id: int, user_email: str) -> None:
+    """Store notification email metadata on an inquiry without using it as sender."""
+    with closing(get_connection(DB_PATH)) as connection:
+        connection.execute(
+            "UPDATE manufacturer_inquiries SET user_email = ? WHERE id = ?;",
+            (user_email, inquiry_id),
+        )
+        connection.commit()
+
+
+def _manufacturer_email_for_inquiry(connection: Any, inquiry_id: int) -> str:
+    row = connection.execute(
+        "SELECT manufacturer_email FROM manufacturer_inquiries WHERE id = ?;",
+        (inquiry_id,),
+    ).fetchone()
+    return str(row["manufacturer_email"] or "") if row else ""
 
 def _requested_ingredients_from_inquiry(inquiry: dict[str, Any]) -> list[str]:
     raw_json = inquiry.get("requested_ingredients_json")

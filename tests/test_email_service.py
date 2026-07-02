@@ -16,8 +16,9 @@ BLOCKED_PHRASES = [
 
 def test_manufacturer_email_draft_is_short_and_natural(monkeypatch) -> None:
     monkeypatch.setattr(email_service.config, "SENDER_DISPLAY_NAME", "Ali")
-    monkeypatch.setattr(email_service.config, "FROM_EMAIL", "halalcheck@example.com")
-    monkeypatch.setattr(email_service.config, "REPLY_TO_EMAIL", "reply@example.com")
+    monkeypatch.setattr(email_service.config, "GMAIL_SENDER_EMAIL", "halalcheckde@gmail.com")
+    monkeypatch.setattr(email_service.config, "FROM_EMAIL", "user@example.com")
+    monkeypatch.setattr(email_service.config, "REPLY_TO_EMAIL", "user-reply@example.com")
     product = {
         "name": "Chocolate Biscuit",
         "brand": "BakeHouse",
@@ -36,8 +37,8 @@ def test_manufacturer_email_draft_is_short_and_natural(monkeypatch) -> None:
     assert "Ingredient: E471" in draft["body"]
     assert "plant-based, animal-based, microbial, synthetic, or alcohol-derived" in draft["body"]
     assert draft["body"].endswith("Kind regards,\nAli")
-    assert draft["sender"] == "Ali <halalcheck@example.com>"
-    assert draft["reply_to"] == "reply@example.com"
+    assert draft["sender"] == "Ali <halalcheckde@gmail.com>"
+    assert draft["reply_to"] == "halalcheckde@gmail.com"
     assert not any(phrase in body_lower for phrase in BLOCKED_PHRASES)
 
 
