@@ -322,6 +322,8 @@ def manufacturer_inquiry_agent(
         email_body=email_draft["body"],
         db_path=db_path,
     )
+    email_draft["body"] = _append_reference_to_email_body(email_draft["body"], inquiry_id)
+    _update_inquiry_email_body(inquiry_id, email_draft["body"], db_path)
 
     return {
         "required": True,
@@ -1066,6 +1068,22 @@ def _create_email_draft(
 ) -> dict[str, str]:
     return email_service.generate_manufacturer_email_draft(product_data, doubtful_issues)
 
+
+
+
+def _append_reference_to_email_body(email_body: str, inquiry_id: int) -> str:
+    if f"HC-{inquiry_id}" in email_body:
+        return email_body
+    return f"{email_body}\n\nReference: HC-{inquiry_id}"
+
+
+def _update_inquiry_email_body(inquiry_id: int, email_body: str, db_path: Path) -> None:
+    with closing(get_connection(db_path)) as connection:
+        connection.execute(
+            "UPDATE manufacturer_inquiries SET email_body = ? WHERE id = ?;",
+            (email_body, inquiry_id),
+        )
+        connection.commit()
 
 def _insert_manufacturer_inquiry(
     product_id: int,

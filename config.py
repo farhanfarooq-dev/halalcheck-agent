@@ -36,6 +36,9 @@ OPENFOODFACTS_BASE_URL = os.getenv(
 # Keep email safe by default. The email service should send only when this is
 # explicitly changed to a sending mode in the local .env file.
 EMAIL_MODE = os.getenv("EMAIL_MODE", "draft")
+GMAIL_SENDER_EMAIL = os.getenv("GMAIL_SENDER_EMAIL", "halalcheckde@gmail.com")
+GMAIL_CREDENTIALS_PATH = os.getenv("GMAIL_CREDENTIALS_PATH", "")
+GMAIL_TOKEN_PATH = os.getenv("GMAIL_TOKEN_PATH", "")
 SMTP_HOST = os.getenv("SMTP_HOST", "")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER", "")

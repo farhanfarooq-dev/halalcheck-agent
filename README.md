@@ -10,8 +10,8 @@ certification.
 
 ## Metrics
 
-- 41 automated tests passed.
-- 4 FastAPI endpoints.
+- 46 automated tests passed.
+- 6 FastAPI endpoints: 4 core endpoints and 2 optional Gmail workflow endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and
   notifications.
@@ -30,6 +30,8 @@ certification.
   user notifications.
 - Optional OpenAI/Gemini explanation mode with safe local fallback.
 - Human-reviewable manufacturer inquiry email drafts.
+- Optional Gmail approval workflow for sending reviewed manufacturer inquiries
+  and syncing replies.
 
 ## API Endpoints
 
@@ -39,6 +41,8 @@ The FastAPI backend provides these endpoints:
 - `POST /check-product`
 - `GET /product-status/{barcode}`
 - `POST /manufacturer-response`
+- `POST /manufacturer-inquiry/send`
+- `POST /gmail/sync-replies`
 
 The main Pydantic schemas are:
 
@@ -72,6 +76,7 @@ Important MVP defaults:
 LLM_PROVIDER=local
 EMAIL_MODE=draft
 DATABASE_PATH=data/halalcheck.db
+GMAIL_SENDER_EMAIL=halalcheckde@gmail.com
 ```
 
 `EMAIL_MODE=draft` is the default. In this MVP, no real emails are sent. The
@@ -82,6 +87,11 @@ Optional ingredient-label image extraction is available in Streamlit only when
 `LLM_PROVIDER=openai` and `OPENAI_API_KEY` are set locally. The extracted text is
 placed into the editable Ingredients field; the halal check still analyzes only
 the final ingredient text, not the image directly.
+
+Optional Gmail sending uses human approval. Keep `EMAIL_MODE=draft` for demos.
+To test real Gmail sending locally, set `EMAIL_MODE=approval`,
+`GMAIL_SENDER_EMAIL`, `GMAIL_CREDENTIALS_PATH`, and `GMAIL_TOKEN_PATH` in your
+local `.env`. Never commit Gmail credentials or token files.
 
 ## Run Locally With Python
 
@@ -176,6 +186,54 @@ curl -X POST http://127.0.0.1:8000/manufacturer-response ^
   -d "{\"inquiry_id\":1,\"response_text\":\"The E471 used in this product is plant-based.\"}"
 ```
 
+
+## Gmail Manufacturer Inquiry Workflow
+
+The Gmail workflow is optional and human-in-the-loop.
+
+Draft mode test:
+
+```bash
+EMAIL_MODE=draft
+py -m streamlit run app.py
+```
+
+Then check a product with doubtful ingredients. The app shows the manufacturer
+inquiry draft, possible email candidates, and the confirmed recipient field. No
+Gmail email is sent in draft mode.
+
+Approved send test:
+
+```env
+EMAIL_MODE=approval
+GMAIL_SENDER_EMAIL=halalcheckde@gmail.com
+GMAIL_CREDENTIALS_PATH=secrets/gmail_credentials.json
+GMAIL_TOKEN_PATH=secrets/gmail_token.json
+```
+
+Run Streamlit, review the draft, confirm/edit the recipient email, then click
+`Approve and Send`. The app stores the Gmail message id and thread id when Gmail
+returns them. Local credential and token files must stay out of Git.
+
+Reply sync test:
+
+In Admin Response Review, click `Sync manufacturer replies from Gmail`. The sync
+matches replies by Gmail thread when available and stores the manufacturer
+response without deleting Gmail messages. For bootcamp/demo testing, the pytest
+suite uses mocked Gmail replies so no real email is sent.
+
+## Public Testing / Deployment Notes
+
+For a public family test, use a free hosting option such as Streamlit Community
+Cloud, Render free web service, or the Docker/Docker Compose instructions in
+this README. Hosting platforms usually provide a free public URL; a permanent
+custom domain is separate and may not be free.
+
+Set secrets through the hosting platform's environment/secret settings. Never
+upload `.env`, Gmail credential JSON, or Gmail token JSON files. If Gmail OAuth
+is too complex for the hosted demo, keep `EMAIL_MODE=draft` and demonstrate the
+local or Docker workflow.
+
 ## Run Tests
 
 ```bash
@@ -185,7 +243,7 @@ py -m pytest
 Expected submission result:
 
 ```text
-41 passed
+46 passed
 ```
 
 ## Run With Docker

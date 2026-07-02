@@ -148,8 +148,8 @@ docker compose up --build
 
 ## Metrics
 
-- 41 automated tests passed.
-- 4 FastAPI endpoints.
+- 46 automated tests passed.
+- 6 FastAPI endpoints: 4 core endpoints and 2 optional Gmail workflow endpoints.
 - Streamlit UI with Product Check, History, and Admin Response Review pages.
 - SQLite workflow for product checks, manufacturer inquiries, responses, and
   notifications.

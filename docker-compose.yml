@@ -1,4 +1,4 @@
-﻿services:
+services:
   api:
     build: .
     command: uvicorn api:app --host 0.0.0.0 --port 8000
@@ -16,6 +16,9 @@
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
       OPENFOODFACTS_BASE_URL: ${OPENFOODFACTS_BASE_URL:-https://world.openfoodfacts.org}
       EMAIL_MODE: ${EMAIL_MODE:-draft}
+      GMAIL_SENDER_EMAIL: ${GMAIL_SENDER_EMAIL:-halalcheckde@gmail.com}
+      GMAIL_CREDENTIALS_PATH: ${GMAIL_CREDENTIALS_PATH:-}
+      GMAIL_TOKEN_PATH: ${GMAIL_TOKEN_PATH:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}
@@ -43,6 +46,9 @@
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
       OPENFOODFACTS_BASE_URL: ${OPENFOODFACTS_BASE_URL:-https://world.openfoodfacts.org}
       EMAIL_MODE: ${EMAIL_MODE:-draft}
+      GMAIL_SENDER_EMAIL: ${GMAIL_SENDER_EMAIL:-halalcheckde@gmail.com}
+      GMAIL_CREDENTIALS_PATH: ${GMAIL_CREDENTIALS_PATH:-}
+      GMAIL_TOKEN_PATH: ${GMAIL_TOKEN_PATH:-}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_USER: ${SMTP_USER:-}

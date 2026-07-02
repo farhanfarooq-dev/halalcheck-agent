@@ -25,3 +25,9 @@ env/
 Thumbs.db
 .vscode/
 .idea/
+
+# Gmail OAuth local files
+gmail_credentials*.json
+gmail_token*.json
+token.json
+credentials.json

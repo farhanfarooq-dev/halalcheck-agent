@@ -54,6 +54,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         user_email TEXT,
         language TEXT NOT NULL DEFAULT 'en',
         final_status TEXT NOT NULL,
+        result_source TEXT,
         explanation TEXT,
         detected_concerns_json TEXT NOT NULL DEFAULT '[]',
         checked_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -67,11 +68,29 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         ingredient_term TEXT NOT NULL,
         requested_ingredients_json TEXT,
         manufacturer_email TEXT,
+        verified_manufacturer_email TEXT,
+        email_status TEXT NOT NULL DEFAULT 'draft',
+        gmail_message_id TEXT,
+        gmail_thread_id TEXT,
+        reply_received_at TEXT,
+        send_error TEXT,
         email_subject TEXT NOT NULL,
         email_body TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'draft',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         sent_at TEXT,
+        FOREIGN KEY (product_id) REFERENCES products (id)
+    );
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS manufacturer_contacts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        brand TEXT,
+        product_id INTEGER,
+        email TEXT NOT NULL,
+        verification_status TEXT NOT NULL DEFAULT 'needs human verification',
+        source TEXT NOT NULL DEFAULT 'human',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (product_id) REFERENCES products (id)
     );
     """,
@@ -135,14 +154,45 @@ def _add_missing_columns(connection: sqlite3.Connection) -> None:
     if "manual_product_hash" not in product_columns:
         connection.execute("ALTER TABLE products ADD COLUMN manual_product_hash TEXT;")
 
+    check_columns = {
+        row["name"] for row in connection.execute("PRAGMA table_info(product_checks);")
+    }
+    if "result_source" not in check_columns:
+        connection.execute("ALTER TABLE product_checks ADD COLUMN result_source TEXT;")
+
     inquiry_columns = {
         row["name"]
         for row in connection.execute("PRAGMA table_info(manufacturer_inquiries);")
     }
-    if "requested_ingredients_json" not in inquiry_columns:
-        connection.execute(
-            "ALTER TABLE manufacturer_inquiries ADD COLUMN requested_ingredients_json TEXT;"
-        )
+    inquiry_columns_to_add = {
+        "requested_ingredients_json": "TEXT",
+        "verified_manufacturer_email": "TEXT",
+        "email_status": "TEXT NOT NULL DEFAULT 'draft'",
+        "gmail_message_id": "TEXT",
+        "gmail_thread_id": "TEXT",
+        "reply_received_at": "TEXT",
+        "send_error": "TEXT",
+    }
+    for column_name, column_type in inquiry_columns_to_add.items():
+        if column_name not in inquiry_columns:
+            connection.execute(
+                f"ALTER TABLE manufacturer_inquiries ADD COLUMN {column_name} {column_type};"
+            )
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS manufacturer_contacts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            brand TEXT,
+            product_id INTEGER,
+            email TEXT NOT NULL,
+            verification_status TEXT NOT NULL DEFAULT 'needs human verification',
+            source TEXT NOT NULL DEFAULT 'human',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products (id)
+        );
+        """
+    )
 
     response_columns = {
         row["name"]

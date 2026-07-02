@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 import config
 import email_service
+from gmail_workflow import approve_and_send_inquiry, sync_manufacturer_replies
 from agents import (
     analyze_manufacturer_response,
     halal_decision_agent,
@@ -87,6 +88,21 @@ class ManufacturerResponseResult(BaseModel):
     email_mode: str
 
 
+class ManufacturerInquirySendRequest(BaseModel):
+    """Human-approved Gmail send request for one inquiry."""
+
+    inquiry_id: int
+    recipient_email: str
+
+
+class GmailSyncResult(BaseModel):
+    """Result from syncing manufacturer replies."""
+
+    status: str
+    count: int
+    matched_replies: list[dict[str, Any]]
+
+
 @app.get("/health")
 def health_check() -> dict[str, str]:
     """Simple health check for local development and deployment probes."""
@@ -132,6 +148,7 @@ def check_product(request: ProductCheckRequest) -> ProductCheckResponse:
         final_status=decision["status"],
         explanation=communication["explanation"],
         detected_concerns=analysis["detected_concerns"],
+        result_source=decision.get("result_source", ""),
         db_path=DB_PATH,
     )
 
@@ -172,6 +189,36 @@ def product_status(barcode: str) -> ProductCheckResponse:
         communication=communication,
         email_mode=config.EMAIL_MODE,
     )
+
+
+
+@app.post("/manufacturer-inquiry/send")
+def send_manufacturer_inquiry(
+    request: ManufacturerInquirySendRequest,
+) -> dict[str, str]:
+    """Send a reviewed manufacturer inquiry only after human approval."""
+    initialize_database(DB_PATH)
+    inquiry = _fetch_inquiry(request.inquiry_id, DB_PATH)
+    if not inquiry:
+        raise HTTPException(status_code=404, detail="Manufacturer inquiry not found.")
+    result = approve_and_send_inquiry(
+        inquiry_id=request.inquiry_id,
+        recipient_email=request.recipient_email,
+        subject=str(inquiry.get("email_subject") or ""),
+        body=str(inquiry.get("email_body") or ""),
+        db_path=DB_PATH,
+    )
+    if result["status"] not in {"sent", "draft"}:
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+
+@app.post("/gmail/sync-replies", response_model=GmailSyncResult)
+def gmail_sync_replies() -> GmailSyncResult:
+    """Sync manufacturer replies from Gmail when configured."""
+    initialize_database(DB_PATH)
+    result = sync_manufacturer_replies(DB_PATH)
+    return GmailSyncResult(**result)
 
 
 @app.post("/manufacturer-response", response_model=ManufacturerResponseResult)
@@ -287,6 +334,7 @@ def _save_product_check(
     final_status: str,
     explanation: str,
     detected_concerns: list[dict[str, Any]],
+    result_source: str,
     db_path: Path,
 ) -> None:
     """Save one product check result."""
@@ -298,16 +346,18 @@ def _save_product_check(
                 user_email,
                 language,
                 final_status,
+                result_source,
                 explanation,
                 detected_concerns_json
             )
-            VALUES (?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 product_id,
                 user_email.strip(),
                 language,
                 final_status,
+                result_source,
                 explanation,
                 json.dumps(detected_concerns),
             ),
@@ -439,6 +489,10 @@ def _fetch_inquiry(inquiry_id: int, db_path: Path) -> dict[str, Any] | None:
                 mi.ingredient_term,
                 mi.requested_ingredients_json,
                 mi.manufacturer_email,
+                mi.verified_manufacturer_email,
+                mi.email_status,
+                mi.gmail_message_id,
+                mi.gmail_thread_id,
                 mi.email_subject,
                 mi.email_body,
                 mi.status,

@@ -20,6 +20,12 @@ from agents import (
 )
 from database import DB_PATH, get_connection, initialize_database
 from image_extraction import extract_ingredients_from_image
+from gmail_workflow import (
+    approve_and_send_inquiry,
+    discover_manufacturer_emails,
+    gmail_sending_allowed,
+    sync_manufacturer_replies,
+)
 
 
 st.set_page_config(page_title="AI HalalCheck Agent", page_icon="AH", layout="wide")
@@ -120,6 +126,7 @@ def show_product_check_page() -> None:
         final_status=decision["status"],
         explanation=communication["explanation"],
         detected_concerns=analysis["detected_concerns"],
+        result_source=decision.get("result_source", ""),
     )
 
     display_product_result(product, analysis, decision, inquiry, communication)
@@ -220,6 +227,25 @@ def display_product_result(
         requested_ingredients = inquiry_data.get("requested_ingredients") or inquiry.get("requested_ingredients") or []
         if requested_ingredients:
             st.write({"requested_doubtful_ingredients": requested_ingredients})
+
+        discovery = discover_manufacturer_emails(product)
+        st.write({"manufacturer_email_discovery": discovery["message"]})
+        candidates = discovery.get("candidates", [])
+        candidate_emails = [candidate["email"] for candidate in candidates]
+        if candidate_emails:
+            selected_candidate = st.selectbox(
+                "Possible manufacturer emails",
+                candidate_emails,
+                key=f"email_candidate_{inquiry_data.get('id')}",
+            )
+        else:
+            selected_candidate = str(inquiry_data.get("manufacturer_email") or "")
+        recipient_email = st.text_input(
+            "Confirmed recipient email",
+            value=selected_candidate,
+            key=f"recipient_email_{inquiry_data.get('id')}",
+        )
+
         st.text_input(
             "Draft subject",
             value=str(inquiry_data.get("email_subject") or ""),
@@ -231,7 +257,23 @@ def display_product_result(
             height=220,
             disabled=True,
         )
-        st.caption("EMAIL_MODE stays in draft mode for this MVP. No email was sent.")
+        if gmail_sending_allowed():
+            if st.button("Approve and Send", key=f"send_inquiry_{inquiry_data.get('id')}"):
+                send_result = approve_and_send_inquiry(
+                    inquiry_id=int(inquiry_data.get("id")),
+                    recipient_email=recipient_email,
+                    subject=str(inquiry_data.get("email_subject") or ""),
+                    body=str(inquiry_data.get("email_body") or ""),
+                    db_path=DB_PATH,
+                )
+                if send_result["status"] == "sent":
+                    st.success(send_result["message"])
+                else:
+                    st.warning(send_result["message"])
+        else:
+            st.caption(
+                "Gmail sending is not configured or EMAIL_MODE=draft. Draft only; no email was sent."
+            )
     elif decision["status"] == "Manufacturer Confirmed Suitable":
         st.info(
             "This product is Manufacturer Confirmed Suitable based on manufacturer "
@@ -274,6 +316,10 @@ def show_lookup_warning(product: dict[str, Any]) -> None:
 def show_admin_response_review_page() -> None:
     """Allow an admin to paste and store a manufacturer response."""
     st.header("Admin Response Review")
+    if st.button("Sync manufacturer replies from Gmail"):
+        sync_result = sync_manufacturer_replies(DB_PATH)
+        st.write(sync_result)
+
     inquiries = fetch_pending_inquiries()
 
     if not inquiries:
@@ -436,6 +482,7 @@ def save_product_check(
     final_status: str,
     explanation: str,
     detected_concerns: list[dict[str, str]],
+    result_source: str,
 ) -> None:
     """Save one product check result."""
     with closing(get_connection(DB_PATH)) as connection:
@@ -446,16 +493,18 @@ def save_product_check(
                 user_email,
                 language,
                 final_status,
+                result_source,
                 explanation,
                 detected_concerns_json
             )
-            VALUES (?, ?, ?, ?, ?, ?);
+            VALUES (?, ?, ?, ?, ?, ?, ?);
             """,
             (
                 product_id,
                 user_email.strip(),
                 language,
                 final_status,
+                result_source,
                 explanation,
                 json.dumps(detected_concerns),
             ),
@@ -472,6 +521,7 @@ def fetch_product_check_history() -> list[dict[str, str]]:
                 p.name AS product_name,
                 p.barcode,
                 pc.final_status,
+                pc.result_source,
                 pc.checked_at
             FROM product_checks pc
             JOIN products p ON p.id = pc.product_id

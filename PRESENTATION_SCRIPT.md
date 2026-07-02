@@ -31,15 +31,16 @@ official certificate.
 Next I will show the explanation. The app can use OpenAI or Gemini if keys are
 configured, but the default demo mode is local explanation, so the project works
 without exposing API secrets. Email is also safe by default:
-`EMAIL_MODE=draft`. The app creates a manufacturer inquiry draft, but it does
-not send a real email.
+`EMAIL_MODE=draft`. The app creates a manufacturer inquiry draft. If Gmail OAuth is configured and
+`EMAIL_MODE=approval`, the user can review the recipient, subject, and body,
+then click Approve and Send. In the default demo mode, no real email is sent.
 
 Now I will open the History page. This shows previous product checks stored in
 SQLite. The database tracks product checks, manufacturer inquiries,
 manufacturer responses, and notification drafts.
 
-Then I will open Admin Response Review. Here an admin can paste a manufacturer
-reply, such as a statement that E471 is plant-based. The app analyzes the
+Then I will open Admin Response Review. Here an admin can sync Gmail replies or
+paste a manufacturer reply, such as a statement that E471 is plant-based. The app analyzes the
 response, stores it, updates the inquiry, and creates a draft notification for
 the user if a customer email was provided.
 
@@ -56,12 +57,14 @@ backend exposes four endpoints:
 - `POST /check-product`
 - `GET /product-status/{barcode}`
 - `POST /manufacturer-response`
+- `POST /manufacturer-inquiry/send`
+- `POST /gmail/sync-replies`
 
 The backend reuses the same workflow as Streamlit: barcode lookup, manual
 fallback, ingredient analysis, explanation generation, inquiry draft creation,
 response analysis, and stored confirmation reuse.
 
-For project completeness, the repo includes 41 passing automated tests, Docker
+For project completeness, the repo includes 46 passing automated tests, Docker
 support, Docker Compose support, `.env.example`, and documentation for local
 Python, Streamlit, FastAPI, tests, and container runs.
 
